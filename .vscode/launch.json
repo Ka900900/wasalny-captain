@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Waslny Captain (Test Mode)",
+      "request": "launch",
+      "type": "dart",
+      "args": [
+        "--dart-define=KASHIER_API_KEY=c56016bb-6cf9-45ec-afb8-53f7711f10f3",
+        "--dart-define=KASHIER_SECRET_KEY=3b7331769bb77340fdca98dfd5bad3d9$3c98cef1d6eb36a42dd78b3d718eb8524c01a2f94b6b45584cb11f4dd5baec083249f6aca5579430693dd154a993dc57",
+        "--dart-define=KASHIER_MERCHANT_ID=MID-44432-850",
+        "--dart-define=IS_LIVE_MODE=false"
+      ]
+    },
+    {
+      "name": "Waslny Captain (Live Mode)",
+      "request": "launch",
+      "type": "dart",
+      "args": [
+        "--dart-define=KASHIER_API_KEY=YOUR_LIVE_API_KEY",
+        "--dart-define=KASHIER_SECRET_KEY=YOUR_LIVE_SECRET_KEY",
+        "--dart-define=KASHIER_MERCHANT_ID=YOUR_LIVE_MERCHANT_ID",
+        "--dart-define=IS_LIVE_MODE=true"
+      ]
+    }
+  ]
+}
