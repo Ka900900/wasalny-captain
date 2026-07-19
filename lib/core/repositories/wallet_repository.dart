@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:waslny_captain/core/models/wallet_models.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
@@ -82,14 +83,50 @@ class WalletRepository {
   }
 
   /// Stream the driver's wallet data in real time.
-  /// Uses Firestore for real-time updates (falls back to polling).
+  /// Primary source is the Backend API (PostgreSQL) — we poll it every
+  /// 3 seconds so top-ups / ride earnings show up immediately for the captain.
+  /// Firestore is used only as a fallback when the API is unreachable.
   Stream<WalletData> streamWallet(String uid) {
-    return _walletRef(uid).snapshots().map((doc) {
-      if (!doc.exists || doc.data() == null) {
-        return devShowSampleData ? _sampleWalletData() : WalletData();
+    final controller = StreamController<WalletData>.broadcast();
+
+    // Emit Firestore cache immediately for instant first paint.
+    _walletRef(uid)
+        .get()
+        .then((doc) {
+          if (doc.exists && doc.data() != null && !controller.isClosed) {
+            controller.add(WalletData.fromMap(doc.data()!));
+          }
+        })
+        .catchError((_) {});
+
+    // Poll backend API for the authoritative balance.
+    Future<void> poll() async {
+      try {
+        final result = await _api.getWalletBalance();
+        if (result['balance'] != null && !controller.isClosed) {
+          final wallet = WalletData(
+            balance: (result['balance'] as num).toDouble(),
+            pendingWithdraw:
+                (result['pendingWithdraw'] as num?)?.toDouble() ?? 0,
+            totalEarned: (result['totalEarned'] as num?)?.toDouble() ?? 0,
+            totalWithdrawn: (result['totalWithdrawn'] as num?)?.toDouble() ?? 0,
+          );
+          await _walletRef(uid).set(wallet.toMap(), SetOptions(merge: true));
+          controller.add(wallet);
+        }
+      } catch (_) {
+        // Keep last value; Firestore fallback already emitted.
       }
-      return WalletData.fromMap(doc.data()!);
-    });
+    }
+
+    poll();
+    final timer = Timer.periodic(const Duration(seconds: 3), (_) => poll());
+    controller.onCancel = () {
+      timer.cancel();
+      controller.close();
+    };
+
+    return controller.stream;
   }
 
   /// Update the wallet balance (e.g. after completing a ride).
