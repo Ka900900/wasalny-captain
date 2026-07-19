@@ -48,19 +48,27 @@ dependencies:
   image_picker: ^1.1.2
   audioplayers: ^6.0.0 # تأكد إنك مستخدم أحدث إصدار
   pinput: ^5.0.0
-  cloudinary_public: ^0.23.1
   flutter_localizations:
     sdk: flutter
-  firebase_storage: ^12.4.10
   firebase_messaging: ^15.2.10
+  flutter_local_notifications: ^18.0.0
   firebase_analytics: ^11.6.0
   firebase_crashlytics: ^4.3.10
   shared_preferences: ^2.1.0
 
+# Google Sign-In
+  google_sign_in: ^6.2.1
+
 # Payment Gateway
   kashier_flutter_sdk: ^0.1.1
   http: ^1.2.0
+  url_launcher: ^6.3.0
+  socket_io_client: ^2.0.3+1
   google_fonts: ^8.1.0
+  package_info_plus: ^8.3.0
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.0.0
+  webview_flutter_wkwebview: ^3.16.0
 
 dev_dependencies:
   flutter_test:
@@ -83,6 +91,7 @@ flutter:
   assets:
     - assets/sounds/trip_alert.mp3
     - assets/sounds/notification_alert.mp3
+    - assets/sounds/ride_alert.mp3
     - assets/appstore.png
     - assets/myimage.jpg
   # To add assets to your application, add an assets section, like this:

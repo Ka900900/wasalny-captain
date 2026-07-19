@@ -1,4 +1,4 @@
-package com.example.waslny_captain
+package com.waslny.captain
 
 import io.flutter.embedding.android.FlutterActivity
 

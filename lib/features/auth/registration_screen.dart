@@ -1,11 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:waslny_captain/widgets/image_source_picker.dart';
 
 import 'package:waslny_captain/core/models/driver_profile.dart';
 import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
+import 'package:waslny_captain/core/services/image_upload_service.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
 
 /// Registration screen for new captains (first login).
@@ -18,10 +19,10 @@ import 'package:waslny_captain/core/theme/app_theme.dart';
 /// On successful save, creates the captain profile in Firestore and
 /// navigates to the Home screen.
 class RegistrationScreen extends StatefulWidget {
-  /// The phone number (without country code) passed from the OTP screen.
-  final String phoneNumber;
+  /// Optional phone number (may be null when using Google Sign-In).
+  final String? phoneNumber;
 
-  const RegistrationScreen({super.key, required this.phoneNumber});
+  const RegistrationScreen({super.key, this.phoneNumber});
 
   @override
   State<RegistrationScreen> createState() => _RegistrationScreenState();
@@ -32,6 +33,7 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _nationalIdController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
 
   bool _isSaving = false;
 
@@ -71,6 +73,7 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   void dispose() {
     _nameController.dispose();
     _nationalIdController.dispose();
+    _phoneController.dispose();
     _animController.dispose();
     super.dispose();
   }
@@ -80,12 +83,7 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   // ──────────────────────────────────────────────────────
 
   Future<void> _pickPhoto() async {
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      imageQuality: 85,
-    );
+    final picked = await pickImageWithSourceSheet(context);
     if (picked != null) {
       setState(() {
         _pickedPhoto = File(picked.path);
@@ -108,16 +106,19 @@ class _RegistrationScreenState extends State<RegistrationScreen>
 
       final repo = DriverRepository.instance;
 
-      // 1. Upload photo if picked
+      // 1. Upload photo if picked (عبر الـ Backend المحمي بـ JWT)
+      // ملاحظة: وثيقة الكابتن تُنشأ عند الحفظ، لذا يُكتب حقل photoUrl في
+      // Firestore عبر createProfile أدناه فور وجود الوثيقة.
       if (_pickedPhoto != null) {
-        _uploadedPhotoUrl = await repo.uploadPickedFile(
-          filePath: _pickedPhoto!.path,
-          folder: 'photos',
+        _uploadedPhotoUrl = await ImageUploadService.instance.uploadImage(
+          type: UploadType.profile,
+          file: _pickedPhoto!,
         );
       }
 
       // 2. Build the profile
-      final fullPhone = '+20${widget.phoneNumber}';
+      // الرقم من حقل الإدخال (إجباري بعد التحقق من الـ validator)
+      final String fullPhone = _phoneController.text.trim();
       final now = DateTime.now();
       final profile = DriverProfile(
         uid: uid,
@@ -129,6 +130,7 @@ class _RegistrationScreenState extends State<RegistrationScreen>
         vehicleModel: '',
         vehicleColor: '',
         vehicleNumber: '',
+        documentsGraceEndsAt: now.add(const Duration(days: 30)),
         createdAt: now,
         updatedAt: now,
       );
@@ -136,9 +138,13 @@ class _RegistrationScreenState extends State<RegistrationScreen>
       // 3. Persist to Firestore
       await repo.createProfile(profile);
 
-      // 4. Navigate to Vehicle Information
+      // 4. Navigate to Vehicle Information (مع تمرير رقم الهاتف)
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/vehicle-info');
+        Navigator.pushReplacementNamed(
+          context,
+          '/vehicle-info',
+          arguments: {'phoneNumber': fullPhone},
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -315,6 +321,37 @@ class _RegistrationScreenState extends State<RegistrationScreen>
                             }
                             if (value.trim().length < 14) {
                               return 'الرقم القومي يجب أن يتكون من 14 رقماً';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 18),
+
+                        // ── Phone Number ──────────────────────
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: '01xxxxxxxxx',
+                            labelText: 'رقم الهاتف',
+                            prefixIcon: Icon(
+                              Icons.phone,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'يرجى إدخال رقم الهاتف';
+                            }
+                            // يقبل 01xxxxxxxxx أو +201xxxxxxxxx
+                            final regex = RegExp(r'^(?:\+20|0)1\d{9}$');
+                            if (!regex.hasMatch(value.trim())) {
+                              return 'رقم الهاتف المصري غير صحيح (مثال: 01xxxxxxxxx)';
                             }
                             return null;
                           },

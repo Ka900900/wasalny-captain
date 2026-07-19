@@ -41,46 +41,46 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCd-Gp-Gpa8zOFXAyy9ADOno6XScCnKHLU',
-    appId: '1:299138072360:web:76e9487db2944e2a369a1d',
-    messagingSenderId: '299138072360',
-    projectId: 'waslny-captain-2026',
-    authDomain: 'waslny-captain-2026.firebaseapp.com',
-    storageBucket: 'waslny-captain-2026.firebasestorage.app',
+    apiKey: 'AIzaSyA_PVbJrUmVATL_7SiWFi2o1zXpe5Zz2p0',
+    appId: '1:13729961462:web:df8539ec4ae1abb7d8a3d7',
+    messagingSenderId: '13729961462',
+    projectId: 'waslny-2a614',
+    authDomain: 'waslny-2a614.firebaseapp.com',
+    storageBucket: 'waslny-2a614.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyD9UOQ6fsx_YTBzE7e4x-2s64EAux0fAFA',
-    appId: '1:299138072360:android:74fa461847d16df6369a1d',
-    messagingSenderId: '299138072360',
-    projectId: 'waslny-captain-2026',
-    storageBucket: 'waslny-captain-2026.firebasestorage.app',
+    apiKey: 'AIzaSyA_PVbJrUmVATL_7SiWFi2o1zXpe5Zz2p0',
+    appId: '1:13729961462:android:df8539ec4ae1abb7d8a3d7',
+    messagingSenderId: '13729961462',
+    projectId: 'waslny-2a614',
+    storageBucket: 'waslny-2a614.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCw0btM97Y1Z6AwhFb2yXxUPYDvjUJD_QM',
-    appId: '1:299138072360:ios:ee3bb501edd517fb369a1d',
-    messagingSenderId: '299138072360',
-    projectId: 'waslny-captain-2026',
-    storageBucket: 'waslny-captain-2026.firebasestorage.app',
-    iosBundleId: 'com.example.waslnyCaptain',
+    apiKey: 'AIzaSyA_PVbJrUmVATL_7SiWFi2o1zXpe5Zz2p0',
+    appId: '1:13729961462:ios:df8539ec4ae1abb7d8a3d7',
+    messagingSenderId: '13729961462',
+    projectId: 'waslny-2a614',
+    storageBucket: 'waslny-2a614.firebasestorage.app',
+    iosBundleId: 'com.waslny.captain',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyCw0btM97Y1Z6AwhFb2yXxUPYDvjUJD_QM',
-    appId: '1:299138072360:ios:ee3bb501edd517fb369a1d',
-    messagingSenderId: '299138072360',
-    projectId: 'waslny-captain-2026',
-    storageBucket: 'waslny-captain-2026.firebasestorage.app',
-    iosBundleId: 'com.example.waslnyCaptain',
+    apiKey: 'AIzaSyA_PVbJrUmVATL_7SiWFi2o1zXpe5Zz2p0',
+    appId: '1:13729961462:ios:df8539ec4ae1abb7d8a3d7',
+    messagingSenderId: '13729961462',
+    projectId: 'waslny-2a614',
+    storageBucket: 'waslny-2a614.firebasestorage.app',
+    iosBundleId: 'com.waslny.captain',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyCd-Gp-Gpa8zOFXAyy9ADOno6XScCnKHLU',
-    appId: '1:299138072360:web:c7b7e4829e29eedb369a1d',
-    messagingSenderId: '299138072360',
-    projectId: 'waslny-captain-2026',
-    authDomain: 'waslny-captain-2026.firebaseapp.com',
-    storageBucket: 'waslny-captain-2026.firebasestorage.app',
+    apiKey: 'AIzaSyA_PVbJrUmVATL_7SiWFi2o1zXpe5Zz2p0',
+    appId: '1:13729961462:web:df8539ec4ae1abb7d8a3d7',
+    messagingSenderId: '13729961462',
+    projectId: 'waslny-2a614',
+    authDomain: 'waslny-2a614.firebaseapp.com',
+    storageBucket: 'waslny-2a614.firebasestorage.app',
   );
 }

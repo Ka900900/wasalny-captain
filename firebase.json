@@ -1,4 +1,8 @@
 {
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs22"
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
@@ -10,20 +14,20 @@
     "platforms": {
       "android": {
         "default": {
-          "projectId": "waslny-captain-2026",
-          "appId": "1:299138072360:android:74fa461847d16df6369a1d",
+          "projectId": "waslny-2a614",
+          "appId": "1:13729961462:android:df8539ec4ae1abb7d8a3d7",
           "fileOutput": "android/app/google-services.json"
         }
       },
       "dart": {
         "lib/firebase_options.dart": {
-          "projectId": "waslny-captain-2026",
+          "projectId": "waslny-2a614",
           "configurations": {
-            "android": "1:299138072360:android:74fa461847d16df6369a1d",
-            "ios": "1:299138072360:ios:ee3bb501edd517fb369a1d",
-            "macos": "1:299138072360:ios:ee3bb501edd517fb369a1d",
-            "web": "1:299138072360:web:76e9487db2944e2a369a1d",
-            "windows": "1:299138072360:web:c7b7e4829e29eedb369a1d"
+            "android": "1:13729961462:android:df8539ec4ae1abb7d8a3d7",
+            "ios": "1:13729961462:ios:2f4d7b3f9020c47dd8a3d7",
+            "macos": "1:13729961462:ios:2f4d7b3f9020c47dd8a3d7",
+            "web": "1:13729961462:web:58f1f8a9f48c2d4dd8a3d7",
+            "windows": "1:13729961462:web:58f1f8a9f48c2d4dd8a3d7"
           }
         }
       }

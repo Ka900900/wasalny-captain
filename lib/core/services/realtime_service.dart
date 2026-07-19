@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:developer' show log;
+import 'dart:io' show Platform;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'auth_service.dart';
+import 'package:waslny_captain/core/models/ride_model.dart';
 
 /// Centralised service that manages all real‑time Firestore listeners
 /// and GPS‑based events used by the captain app.
@@ -37,17 +40,36 @@ class RealtimeService {
 
   /// Start streaming GPS position and uploading to Firestore every ~10 m.
   void startGpsTracking() {
-    try {
-      // Real‑time stream when the device moves
-      _positionSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 10, // every 10 metres
+    LocationSettings locationSettings;
+
+    if (Platform.isAndroid) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+        forceLocationManager: false,
+        intervalDuration: const Duration(seconds: 10),
+        // إعدادات الإشعار الذي يمنع الأندرويد من قتل التطبيق في الخلفية
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationText:
+              "تطبيق وصلني يعمل في الخلفية لتحديث موقعك وتلقي طلبات الركاب الحية.",
+          notificationTitle: "جاري تتبع الموقع لايف",
+          enableWakeLock: true,
         ),
-      ).listen(_onPosition, onError: (_) {});
-    } catch (_) {
-      // Location not available on this platform (web without HTTPS, etc.)
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      );
     }
+
+    _positionSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          _onPosition,
+          onError: (error) {
+            log('⚠️ خطأ في استقبال تيار الموقع: $error');
+          },
+        );
 
     // Fallback periodic upload when the stream is silent
     try {
@@ -113,20 +135,15 @@ class RealtimeService {
   /// Called when the pending‑rides snapshot becomes empty.
   void Function()? onNoPendingRides;
 
-  /// Start listening to the `rides` collection for documents with
-  /// `status == 'pending'`.
+  /// [مهمل] لم يعد استقبال الرحلات المعلّقة عبر مستمع Firestore العام.
+  /// الطلبات تصل الآن لحظياً عبر حدث السوكيت `ride.new_available`
+  /// (انظر SocketService.onNewAvailableRide). تُركت الدالة كـ no-op لعدم
+  /// كسر النداءات الحالية في الواجهة.
   void startRideListener() {
-    _pendingRidesSubscription = FirebaseFirestore.instance
-        .collection('rides')
-        .where('status', isEqualTo: 'pending')
-        .snapshots()
-        .listen((snapshot) {
-          if (snapshot.docs.isNotEmpty) {
-            onNewRideRequest?.call(snapshot.docs.first);
-          } else {
-            onNoPendingRides?.call();
-          }
-        });
+    // تم تعطيل المستمع العام لتجنّب القراءة المتكررة لرحلات غير مخصّصة للكابتن.
+    // الرحلات المعلّقة تُستقبَل الآن عبر SocketService.onNewAvailableRide.
+    log('ℹ️ startRideListener: تم تعطيل مستمع Firestore العام للرحلات '
+        'المعلّقة (يُستبدَل بالسوكيت).');
   }
 
   void stopRideListener() {
@@ -141,8 +158,8 @@ class RealtimeService {
   StreamSubscription<DocumentSnapshot>? _activeRideSubscription;
 
   /// Called when the ride document's `status` field changes.
-  /// The argument is the new status string.
-  void Function(String status)? onRideStatusChanged;
+  /// The argument is the updated [RideModel].
+  void Function(RideModel updatedRide)? onRideStatusChanged;
 
   /// Called when the ride was cancelled by the passenger.
   void Function()? onRideCancelled;
@@ -158,9 +175,18 @@ class RealtimeService {
       if (status == 'cancelled' || status == 'cancelled_by_passenger') {
         onRideCancelled?.call();
       } else if (status != null) {
-        onRideStatusChanged?.call(status);
+        onRideStatusChanged?.call(RideModel.fromSnapshot(snapshot));
       }
     });
+  }
+
+  /// بدء تتبّع حالة رحلة مُقبولة فعلياً عبر معرّفها في Firestore.
+  /// يُستخدم بعد نجاح قبول الرحلة لربط مستندها الخاص `rides/{rideId}`
+  /// فقط، بدلاً من المستمع العام للرحلات المعلّقة.
+  void startRideStatusListenerById(String rideId) {
+    startRideStatusListener(
+      FirebaseFirestore.instance.collection('rides').doc(rideId),
+    );
   }
 
   void stopRideStatusListener() {

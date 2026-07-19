@@ -1,48 +1,35 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function owns(uid) {
-      return signedIn() && request.auth.uid == uid;
-    }
-
-    match /captains/{uid} {
-      allow read, create, update, delete: if owns(uid);
-    }
-
-    match /drivers/{uid} {
-      allow read, create, update, delete: if owns(uid);
-
-      match /{document=**} {
-        allow read, create, update, delete: if owns(uid);
-      }
-    }
-
-    match /wallets/{uid} {
-      allow read, create, update, delete: if owns(uid);
-
-      match /{document=**} {
-        allow read, create, update, delete: if owns(uid);
-      }
-    }
-
+    // الرحلات: أي مستخدم مسجّل يقرأ/يعدّل (منطق التطبيق يتحكم في الصلاحيات)
     match /rides/{rideId} {
-      allow read: if signedIn();
-      allow create: if signedIn();
-      allow update: if signedIn() && (
-        resource.data.captainId == request.auth.uid ||
-        request.resource.data.captainId == request.auth.uid ||
-        resource.data.status == 'pending'
-      );
-      allow delete: if false;
+      allow read, write: if request.auth != null;
     }
 
+    // المحادثات: يقتصر الوصول على طرفي الرحلة فقط (الكابتن + الراكب)
+    match /chats/{rideId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == resource.data.driverId
+            || request.auth.uid == resource.data.riderId);
+      allow create, update: if request.auth != null
+        && (request.auth.uid == resource.data.driverId
+            || request.auth.uid == resource.data.riderId);
+
+      // رسائل الغرفة: نفس قيود الطرفين
+      match /messages/{messageId} {
+        allow read: if request.auth != null
+          && (request.auth.uid == resource.data.senderId
+              || request.auth.uid == resource.data.receiverId);
+        allow create: if request.auth != null
+          && request.auth.uid == request.resource.data.senderId
+          && (request.auth.uid == resource.data.driverId
+              || request.auth.uid == resource.data.riderId);
+      }
+    }
+
+    // أي مجموعة أخرى: يشترط تسجيل الدخول فقط
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if request.auth != null;
     }
   }
 }

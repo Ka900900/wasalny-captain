@@ -66,5 +66,17 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>التطبيق يحتاج الكاميرا لتصوير السيارة والمستندات</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>التطبيق يحتاج الوصول للمعرض لاختيار الصور</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>التطبيق يرسل تنبيهات فورية عند وصول رحلة جديدة</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

@@ -30,18 +30,25 @@ class WalletTransaction {
   }
 
   Map<String, dynamic> toMap() => {
-        'type': type,
-        'amount': amount,
-        'description': description,
-        'status': status,
-        'createdAt': createdAt,
-      };
+    'type': type,
+    'amount': amount,
+    'description': description,
+    'status': status,
+    'createdAt': createdAt,
+  };
 
   /// Whether this transaction added money to the wallet.
-  bool get isCredit => type == 'earning' || (type == 'withdraw' && status == 'rejected');
+  bool get isCredit =>
+      type == 'earning' ||
+      type == 'deposit' ||
+      type == 'payment' ||
+      (type == 'withdrawal' && status == 'rejected') ||
+      (type == 'withdraw' && status == 'rejected');
 
   /// Whether this transaction removed money from the wallet.
-  bool get isDebit => (type == 'withdraw' && status == 'completed') || type == 'payment';
+  bool get isDebit =>
+      (type == 'withdrawal' && status == 'completed') ||
+      (type == 'withdraw' && status == 'completed');
 }
 
 /// A withdrawal request submitted by the captain.
@@ -54,6 +61,10 @@ class WithdrawRequest {
   final String? accountHolder;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  // Reference to a saved payment method (if the captain picked one)
+  final String? paymentMethodId;
+  final String? paymentMethodType;
+  final String? paymentMethodLabel;
 
   const WithdrawRequest({
     required this.id,
@@ -64,6 +75,9 @@ class WithdrawRequest {
     this.accountHolder,
     required this.createdAt,
     this.updatedAt,
+    this.paymentMethodId,
+    this.paymentMethodType,
+    this.paymentMethodLabel,
   });
 
   factory WithdrawRequest.fromMap(String id, Map<String, dynamic> map) {
@@ -76,18 +90,24 @@ class WithdrawRequest {
       accountHolder: map['accountHolder'] as String?,
       createdAt: (map['createdAt'] as dynamic)?.toDate() ?? DateTime.now(),
       updatedAt: (map['updatedAt'] as dynamic)?.toDate(),
+      paymentMethodId: map['paymentMethodId'] as String?,
+      paymentMethodType: map['paymentMethodType'] as String?,
+      paymentMethodLabel: map['paymentMethodLabel'] as String?,
     );
   }
 
   Map<String, dynamic> toMap() => {
-        'amount': amount,
-        'status': status,
-        'bankAccount': bankAccount,
-        'bankName': bankName,
-        'accountHolder': accountHolder,
-        'createdAt': createdAt,
-        'updatedAt': updatedAt,
-      };
+    'amount': amount,
+    'status': status,
+    'bankAccount': bankAccount,
+    'bankName': bankName,
+    'accountHolder': accountHolder,
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
+    'paymentMethodId': paymentMethodId,
+    'paymentMethodType': paymentMethodType,
+    'paymentMethodLabel': paymentMethodLabel,
+  };
 
   String get statusLabel {
     switch (status) {
@@ -146,11 +166,11 @@ class WalletData {
   }
 
   Map<String, dynamic> toMap() => {
-        'balance': balance,
-        'pendingWithdraw': pendingWithdraw,
-        'totalEarned': totalEarned,
-        'totalWithdrawn': totalWithdrawn,
-      };
+    'balance': balance,
+    'pendingWithdraw': pendingWithdraw,
+    'totalEarned': totalEarned,
+    'totalWithdrawn': totalWithdrawn,
+  };
 }
 
 /// A saved payment method.

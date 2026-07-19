@@ -10,12 +10,18 @@ class HomeAppBar extends StatelessWidget {
   final VoidCallback? onProfileTap;
   final VoidCallback? onNotificationsTap;
   final VoidCallback? onSafetyTap;
+  final bool isOnline;
+  final bool hasActiveTrip;
+  final ValueChanged<bool>? onToggleOnline;
 
   const HomeAppBar({
     super.key,
     this.onProfileTap,
     this.onNotificationsTap,
     this.onSafetyTap,
+    this.isOnline = false,
+    this.hasActiveTrip = false,
+    this.onToggleOnline,
   });
 
   @override
@@ -31,6 +37,54 @@ class HomeAppBar extends StatelessWidget {
         ),
         child: Row(
           children: [
+            // ── Online/Offline Switch ───────────────────
+            // The captain's availability toggle (sends Online/Offline to the
+            // server via the parent's _toggleOnlineStatus handler).
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: isOnline ? AppColors.successContainer : AppColors.card,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
+                border: Border.all(
+                  color: isOnline
+                      ? const Color.fromARGB(255, 39, 207, 9).withValues(alpha: 0.5)
+                      : const Color.fromARGB(255, 102, 102, 102),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                    color: isOnline ? AppColors.success : AppColors.textMuted,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isOnline ? 'متصل' : 'غير متصل',
+                    style: AppTextStyles.labelSmall?.copyWith(
+                      color: isOnline
+                          ? AppColors.success
+                          : AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Switch(
+                    value: isOnline,
+                    onChanged: hasActiveTrip ? null : onToggleOnline,
+                    activeThumbColor: AppColors.success,
+                    activeTrackColor: AppColors.success.withValues(alpha: 0.4),
+                    inactiveThumbColor: AppColors.textMuted,
+                    inactiveTrackColor: AppColors.border,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    // ignore: avoid_redundant_argument_values
+                    splashRadius: 0,
+                  ),
+                ],
+              ),
+            ),
+
             const Spacer(),
 
             // ── Profile ──────────────────────────────────

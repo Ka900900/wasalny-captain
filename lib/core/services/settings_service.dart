@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:waslny_captain/core/services/notification_service.dart';
+
 class SettingsService extends ChangeNotifier {
   SettingsService._();
 
@@ -9,14 +11,23 @@ class SettingsService extends ChangeNotifier {
   static const String _themeModeKey = 'app_theme_mode';
   static const String _notificationsKey = 'app_notifications_enabled';
 
-  ThemeMode themeMode = ThemeMode.system;
+  ThemeMode themeMode = ThemeMode.dark;
   bool notificationsEnabled = true;
 
   Future<void> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    final storedTheme = prefs.getString(_themeModeKey);
-    themeMode = _themeModeFromString(storedTheme) ?? ThemeMode.system;
-    notificationsEnabled = prefs.getBool(_notificationsKey) ?? true;
+    try {
+      final prefs = await SharedPreferences.getInstance().timeout(
+        const Duration(seconds: 6),
+      );
+      final storedTheme = prefs.getString(_themeModeKey);
+      themeMode = _themeModeFromString(storedTheme) ?? ThemeMode.dark;
+      notificationsEnabled = prefs.getBool(_notificationsKey) ?? true;
+    } catch (e) {
+      // ignore: avoid_print
+      print('[SettingsService] initialize failed/timed out: $e');
+      themeMode = ThemeMode.dark;
+      notificationsEnabled = true;
+    }
   }
 
   Future<void> updateThemeMode(ThemeMode mode) async {
@@ -30,6 +41,11 @@ class SettingsService extends ChangeNotifier {
     notificationsEnabled = enabled;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_notificationsKey, enabled);
+    if (enabled) {
+      await NotificationService.instance.enable();
+    } else {
+      await NotificationService.instance.disable();
+    }
     notifyListeners();
   }
 

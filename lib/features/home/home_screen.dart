@@ -6,15 +6,26 @@ import 'package:geolocator/geolocator.dart';
 
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/services/database_service.dart';
+import 'package:waslny_captain/core/models/driver_profile.dart';
+import 'package:waslny_captain/core/models/ride_model.dart';
+import 'package:waslny_captain/core/repositories/driver_repository.dart';
+import 'package:waslny_captain/core/services/auth_service.dart';
+import 'package:waslny_captain/core/services/api_service.dart';
+import 'package:waslny_captain/core/services/sound_service.dart';
+import 'package:waslny_captain/core/services/realtime_service.dart';
+import 'package:waslny_captain/core/services/socket_service.dart';
+import 'package:waslny_captain/features/profile/edit_profile_screen.dart';
 import 'package:waslny_captain/core/widgets/route_transitions.dart';
 import 'package:waslny_captain/features/trips/trips_screen.dart';
 import 'package:waslny_captain/features/wallet/wallet_screen.dart';
 import 'package:waslny_captain/features/profile/profile_screen.dart';
 import 'package:waslny_captain/features/notifications/notifications_screen.dart';
-import 'package:waslny_captain/features/safety/safety_screen.dart';
+import 'package:waslny_captain/features/chat/chat_screen.dart';
 
 import 'widgets/home_map_widget.dart';
-import 'widgets/home_app_bar.dart';
+import 'widgets/ride_request_card.dart';
+import 'widgets/trip_status_card.dart';
+import 'widgets/online_waiting_card.dart';
 
 /// Main captain home screen with Material 3 bottom navigation.
 ///
@@ -48,6 +59,16 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   // ── Active trip workflow ──────────────────────────
   String? _activeTripId;
 
+  // ── Current incoming ride request (Phase 1) ───────
+  RideModel? _currentRideRequest;
+
+  // ── Ride-alert sound toggle (used by the waiting card) ──
+  bool _soundEnabled = true;
+
+  // ── Profile stream (document compliance / ban status) ──
+  DriverProfile? _profile;
+  StreamSubscription<DriverProfile?>? _profileSub;
+
   // ──────────────────────────────────────────────────────
   // Lifecycle
   // ──────────────────────────────────────────────────────
@@ -59,12 +80,76 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     mapController = osm.MapController.withPosition(
       initPosition: osm.GeoPoint(latitude: 30.0444, longitude: 31.2357),
     );
+
+    final uid = AuthService.instance.currentUser?.uid;
+    if (uid != null) {
+      _profileSub = DriverRepository.instance.streamProfile(uid).listen((p) {
+        if (!mounted) return;
+        setState(() => _profile = p);
+        // إذا حُظر الكابتن أثناء الاتصال، أُخرجه للوضع غير المتصل فوراً
+        if (p?.isBanned == true && _isOnline) {
+          _forceOfflineForBan();
+        }
+      });
+    }
+
+    // ── استقبال طلبات الرحلات عبر السوكيت (بديل آمن عن مستمع Firestore العام) ──
+    // حدث لحظي من الباك إند للكابتن المخصّص فقط → اعرض الكارت + شغّل صوت التنبيه.
+    SocketService().onNewAvailableRide = (ride) {
+      if (!mounted) return;
+      setState(() => _currentRideRequest = ride);
+      // شغّل صوت التنبيه المتكرر لجذب انتباه الكابتن.
+      SoundService.instance.playLoopingAlert();
+      // لا نبدأ تتبّع حالة الرحلة هنا — ننتظر نجاح القبول (status → accepted)
+      // لربط مستندها الخاص في Firestore عبر startRideStatusListenerById.
+    };
+
+    // أي تغيير في حالة الرحلة (من Firestore) → حدّث الكارت فوراً
+    RealtimeService.instance.onRideStatusChanged = (updatedRide) {
+      if (!mounted) return;
+      // انتهت الرحلة: صفّر الكارت + أظهر رسالة نجاح
+      if (updatedRide.status == RideStatus.completed) {
+        RealtimeService.instance.stopRideStatusListener();
+        _activeTripId = null;
+        setState(() => _currentRideRequest = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'انتهت الرحلة بنجاح — يمكنك استلام التقييم والأرباح قريباً.',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        return;
+      }
+      setState(() => _currentRideRequest = updatedRide);
+    };
+
+    // إلغاء الرحلة (من العميل/الباك إند) → أخفِ الكارت + SnackBar
+    RealtimeService.instance.onRideCancelled = () {
+      if (!mounted) return;
+      RealtimeService.instance.stopRideStatusListener();
+      _activeTripId = null;
+      setState(() => _currentRideRequest = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إلغاء الرحلة من قبل العميل.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    };
+
+    // لا يوجد مستمع لرحلات معلّقة عبر Firestore بعد الآن (استُبدل بالسوكيت).
   }
 
   @override
   void dispose() {
     _locationTimer?.cancel();
     _locationTimer = null;
+    _profileSub?.cancel();
+    RealtimeService.instance.stopRideListener();
+    RealtimeService.instance.stopRideStatusListener();
+    SocketService().disconnect();
     super.dispose();
   }
 
@@ -143,6 +228,167 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     _locationTimer = null;
   }
 
+  // ──────────────────────────────────────────────────────
+  // Phase 1: Ride request handling (placeholder for Phase 2)
+  // ──────────────────────────────────────────────────────
+
+  // ──────────────────────────────────────────────────────
+  // Phase 2: Ride lifecycle — wired to the real backend (ApiService)
+  // ──────────────────────────────────────────────────────
+
+  /// قبول طلب رحلة وارد — مُشغّل فقط (Trigger).
+  /// الـ Stream هو المسؤول عن تحديث الـ UI عند نجاح القبول (status → accepted).
+  Future<void> _acceptRide(RideModel ride) async {
+    if (!mounted) return;
+    // أوقف تنبيه الرحلة المتكرر فوراً بمجرد تفاعل الكابتن
+    await SoundService.instance.stopAlert();
+    // 1. إظهار مؤشر تحميل يمنع الضغط المزدوج
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    // 2. استدعاء الباك إند (تُرجع true عند النجاح، false عند الفشل)
+    final success = await ApiService.instance.acceptRide(ride.id);
+
+    // 3. إخفاء مؤشر التحميل
+    if (mounted) Navigator.pop(context);
+
+    if (!success && mounted) {
+      // فشل القبول (كابتن آخر التقطها، أو العميل ألغاها)
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'عفواً، لم نتمكن من قبول الطلب (ربما تم قبوله من كابتن آخر).',
+          ),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+      return;
+    }
+
+    // نجح القبول: ابدأ تتبّع حالة هذه الرحلة المُقبولة فقط عبر مستندها الخاص
+    // في Firestore (rides/{rideId}) — لا علاقة للمستمع العام المُعطّل.
+    RealtimeService.instance.stopRideStatusListener();
+    RealtimeService.instance.startRideStatusListenerById(ride.id);
+    _activeTripId = ride.id;
+    // ملاحظة: لا نحدّث الحالة هنا — الـ Stream سيتلقى "accepted" ويعرض TripStatusCard.
+  }
+
+  /// رفض طلب الرحلة (يدوياً أو بانتهاء العدّاد) — حدث لحظي لا يُعاد بثّه،
+  /// لذا نكتفي بإخفاء الكارت محلياً وإيقاف الصوت. لا حاجة لإبلاغ الباك إند.
+  void _rejectRide() {
+    if (_currentRideRequest == null) return;
+    // أوقف تنبيه الرحلة المتكرر فوراً بمجرد تفاعل الكابتن
+    SoundService.instance.stopAlert();
+    // لا نوقف مستمع الحالة لأنه لا يُستدعى إلا بعد القبول الفعلي.
+    _activeTripId = null;
+    setState(() => _currentRideRequest = null);
+  }
+
+  /// وصول الكابتن لنقطة الالتقاط — مُشغّل فقط (Trigger).
+  /// الـ Stream هو المسؤول عن تحديث الـ UI (status → arrived).
+  Future<void> _arriveRide(RideModel ride) async {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final success = await ApiService.instance.arriveRide(ride.id);
+
+    if (mounted) Navigator.pop(context);
+
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تأكيد الوصول، حاول مرة أخرى.'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+    }
+    // الـ Stream سيتلقى "arrived" ويحدّث الـ UI تلقائياً.
+  }
+
+  /// بدء الرحلة عند ركوب العميل — مُشغّل فقط (Trigger).
+  /// الـ Stream هو المسؤول عن تحديث الـ UI (status → started).
+  Future<void> _startRide(RideModel ride) async {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final success = await ApiService.instance.startRide(ride.id);
+
+    if (mounted) Navigator.pop(context);
+
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر بدء الرحلة، حاول مرة أخرى.'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+    }
+    // الـ Stream سيتلقى "started" ويحدّث الـ UI تلقائياً.
+  }
+
+  /// إنهاء الرحلة عند الوصول للوجهة — مُشغّل فقط (Trigger).
+  /// الـ Stream هو المسؤول عن تصفير الكارت + إظهار رسالة النجاح (status → completed).
+  Future<void> _completeRide(RideModel ride) async {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final success = await ApiService.instance.completeRide(ride.id);
+
+    if (mounted) Navigator.pop(context);
+
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إنهاء الرحلة، حاول مرة أخرى.'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+    }
+    // الـ Stream سيتلقى "completed" ويصفّر الكارت + يظهر رسالة النجاح.
+  }
+
+  /// فتح شاشة المحادثة الريل تايم مع الراكب أثناء الرحلة النشطة.
+  /// الغرفة تُنشأ في Firestore عند قبول الرحلة (من الباك إند)،
+  /// ومعرّفها = معرّف الرحلة، والطرف الآخر = riderId.
+  void _openChat(RideModel ride) {
+    if (!mounted) return;
+    final riderId = ride.riderId;
+    if (riderId == null || riderId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر فتح المحادثة: بيانات الراكب غير متوفرة'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      RouteTransitions.slideUp(
+        ChatScreen(
+          rideId: ride.id,
+          riderId: riderId,
+          riderName: ride.riderName ?? 'الراكب',
+        ),
+      ),
+    );
+  }
+
   Future<void> _uploadCurrentPosition() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -155,14 +401,23 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         latitude: pos.latitude,
         longitude: pos.longitude,
       );
+      // إرسال الموقع للباك إند عبر السوكيت لحظياً
+      SocketService().emitLocation(lat: pos.latitude, lng: pos.longitude);
     } catch (_) {
       // Silent — location upload is best-effort
     }
   }
 
-  // ──────────────────────────────────────────────────────
-  // Online/Offline toggle logic
-  // ──────────────────────────────────────────────────────
+  /// Toggle the ride-alert sound on/off from the waiting card.
+  void _toggleSound() {
+    if (!mounted) return;
+    setState(() => _soundEnabled = !_soundEnabled);
+    if (_soundEnabled) {
+      SoundService.instance.playRideAlert(duration: const Duration(seconds: 1));
+    } else {
+      SoundService.instance.stopTripAlert();
+    }
+  }
 
   Future<void> _toggleOnlineStatus() async {
     final newValue = !_isOnline;
@@ -181,13 +436,35 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       return;
     }
 
+    // Guard: cannot go online while banned for missing documents
+    if (newValue) {
+      if (_profile?.compliance(DateTime.now()) == DocumentCompliance.banned) {
+        _showBannedDialog();
+        return;
+      }
+    }
+
     // Guard: need location permission to go online
     if (!_locationGranted && newValue) {
       await _checkLocationPermission();
       if (!_locationGranted) return;
     }
 
-    // Optimistic UI update
+    // 1. مزامنة الحالة مع الباك إند أولاً (قبل أي تغيير محلي)
+    final backendOk = await ApiService.instance.toggleAvailability(newValue);
+    if (!backendOk) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر مزامنة حالة التوافر مع السيرفر، حاول مرة أخرى'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return; // لا نغيّر الحالة محلياً عند الفشل
+    }
+
+    // 2. نجحت المزامنة → حدّث الواجهة محلياً
     setState(() => _isOnline = newValue);
 
     try {
@@ -210,17 +487,25 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       // Start/stop periodic location uploads
       if (newValue) {
         _startLocationUpdates();
+        // تهيئة اتصال السوكيت لبث الموقع والبيانات الحية
+        final uid = AuthService.instance.currentUser?.uid;
+        // أعد تحميل التوكن من التخزين المحلي تحسباً لكونه فارغاً في الذاكرة
+        // (مثلاً بعد إعادة تشغيل التطبيق) قبل تمريره للسوكيت.
+        await ApiService.instance.loadToken();
+        final token = ApiService.instance.getToken();
+        if (uid != null && token != null) {
+          SocketService().initSocket(uid, token);
+        }
       } else {
         _stopLocationUpdates();
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(newValue ? 'تم التفعيل بنجاح' : 'تم الإيقاف بنجاح'),
-            backgroundColor: newValue ? AppColors.success : AppColors.warning,
-          ),
-        );
+        // قطع اتصال السوكيت عند تحويل الكابتن إلى Offline
+        SocketService().disconnect();
+        // أوقف الاستماع لأي رحلة نشطة وأزل الطلب/الرحلة المعروضة
+        RealtimeService.instance.stopRideStatusListener();
+        _activeTripId = null;
+        if (_currentRideRequest != null) {
+          setState(() => _currentRideRequest = null);
+        }
       }
     } catch (e) {
       debugPrint('updateCaptainStatus error: $e');
@@ -263,6 +548,116 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     );
   }
 
+  // ── Document compliance: ban enforcement helpers ──
+
+  Future<void> _forceOfflineForBan() async {
+    if (!mounted) return;
+    setState(() => _isOnline = false);
+    _stopLocationUpdates();
+    // قطع اتصال السوكيت عند الإيقاف القسري للحظر
+    SocketService().disconnect();
+    try {
+      await _dbService.updateCaptainStatus(
+        online: false,
+        latitude: null,
+        longitude: null,
+      );
+    } catch (_) {}
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم حظرك مؤقتاً لعدم رفع المستندات المطلوبة'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showBannedDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حساب محظور مؤقتاً'),
+        content: const Text(
+          'لم يتم رفع المستندات المطلوبة (الفيش الجنائى وتحليل المخدرات) '
+          'خلال المهلة المحددة. يرجى رفعها الآن لرفع الحظر.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('لاحقاً'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EditProfileScreen(profile: _profile),
+                ),
+              );
+            },
+            child: const Text('رفع المستندات'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComplianceBanner() {
+    final profile = _profile;
+    if (profile == null) return const SizedBox.shrink();
+    final now = DateTime.now();
+    final status = profile.compliance(now);
+    if (status == DocumentCompliance.submitted) return const SizedBox.shrink();
+    if (status == DocumentCompliance.banned) {
+      final until = profile.banUntil;
+      final txt = until != null
+          ? 'تم حظرك لعدم رفع المستندات المطلوبة (حتى ${_fmtDate(until)})'
+          : 'تم حظرك لعدم رفع المستندات المطلوبة';
+      return _complianceBannerTile(txt, AppColors.error);
+    }
+    final daysLeft = profile.daysLeftInGrace(now);
+    if (daysLeft <= 7) {
+      return _complianceBannerTile(
+        'متبقٍ $daysLeft يوم لرفع المستندات قبل الحظر',
+        AppColors.warning,
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _complianceBannerTile(String text, Color color) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: color, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: AppTextStyles.labelSmall?.copyWith(color: color),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
+
   Widget _buildHomeContent() {
     return Stack(
       children: [
@@ -281,85 +676,239 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         // ── 2. Offline gradient scrim ─────────────────────
         if (!_isOnline) _buildOfflineScrim(),
 
-        // ── 3. Top bar + status badge in a SafeArea ───────
-        // The status badge is the ONLY online/offline controller.
-        SafeArea(
-          child: Column(
+        // ── 2b. Bottom Online/Offline control (single source of truth) ──
+        // Large, clear button anchored to the bottom of the screen.
+        // Shown only when no ride-request / trip card is occupying the
+        // bottom area, so the two never overlap.
+        if (_currentRideRequest == null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 96,
+            child: _buildOnlineToggleButton(),
+          ),
+
+        // ── 3. Floating top action: notifications ──
+        Positioned(
+          top: 48,
+          left: 16,
+          right: 16,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: HomeAppBar(
-                        onProfileTap: () => Navigator.push(
-                          context,
-                          RouteTransitions.slideUp(const ProfileScreen()),
-                        ),
-                        onNotificationsTap: () => Navigator.push(
-                          context,
-                          RouteTransitions.slideUp(const NotificationsScreen()),
-                        ),
-                        onSafetyTap: () => Navigator.push(
-                          context,
-                          RouteTransitions.slideUp(const SafetyScreen()),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    _buildStatusBadge(),
-                  ],
+              // جرس الإشعارات (يسار حسب اتجاه RTL)
+              _buildFloatingActionButton(
+                icon: Icons.notifications_outlined,
+                label: 'الإشعارات',
+                onTap: () => Navigator.push(
+                  context,
+                  RouteTransitions.slideUp(const NotificationsScreen()),
                 ),
               ),
-              const Spacer(),
             ],
           ),
         ),
+        Positioned(
+          top: 112,
+          left: 16,
+          right: 16,
+          child: _buildComplianceBanner(),
+        ),
+
+        // ── 3b. Empty / Waiting state (online, no active ride) ──
+        if (_isOnline && _currentRideRequest == null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 24,
+            child: OnlineWaitingCard(
+              isSoundEnabled: _soundEnabled,
+              onSoundToggle: _toggleSound,
+            ),
+          ),
 
         // ── 4. My Location FAB ────────────────────────────
         if (_mapReady && _isOnline)
           Positioned(left: 16, bottom: 24, child: _buildMyLocationButton()),
+
+        // ── 5. بطاقة الرحلة الريل‑تايم (مدفوعة بالـ Stream) ──
+        if (_currentRideRequest != null)
+          if (_currentRideRequest!.status == RideStatus.pending)
+            // طلب جديد بانتظار القبول
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 24,
+              child: RideRequestCard(
+                pickupAddress: _currentRideRequest!.pickupAddress,
+                destinationAddress: _currentRideRequest!.destinationAddress,
+                price: _currentRideRequest!.fare?.toStringAsFixed(2),
+                riderName: _currentRideRequest!.riderName,
+                distance: _currentRideRequest!.distance,
+                onAccept: () => _acceptRide(_currentRideRequest!),
+                onReject: _rejectRide,
+                onExpired: _rejectRide,
+              ),
+            )
+          else if (_currentRideRequest!.status == RideStatus.accepted ||
+              _currentRideRequest!.status == RideStatus.arrived ||
+              _currentRideRequest!.status == RideStatus.started)
+            // رحلة نشطة (مقبولة / وصل الكابتن / قيد التنفيذ)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 24,
+              child: TripStatusCard(
+                status: _currentRideRequest!.status.name,
+                pickupAddress: _currentRideRequest!.pickupAddress,
+                destinationAddress: _currentRideRequest!.destinationAddress,
+                price: _currentRideRequest!.fare?.toStringAsFixed(2),
+                riderName: _currentRideRequest!.riderName,
+                distance: _currentRideRequest!.distance,
+                etaText: _currentRideRequest!.etaText,
+                onMarkArrived: () => _arriveRide(_currentRideRequest!),
+                onMarkStarted: () => _startRide(_currentRideRequest!),
+                onMarkCompleted: () => _completeRide(_currentRideRequest!),
+                onBackToHome: () => setState(() => _currentRideRequest = null),
+                onOpenChat: () => _openChat(_currentRideRequest!),
+              ),
+            ),
       ],
     );
   }
 
-  /// Status badge — the ONLY online/offline controller.
-  Widget _buildStatusBadge() {
-    return GestureDetector(
-      onTap: _toggleOnlineStatus,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: _isOnline ? AppColors.primaryContainer : AppColors.card,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
-          border: Border.all(
-            color: _isOnline ? AppColors.primary : AppColors.border,
-            width: 1.5,
+  Widget _buildFloatingActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color backgroundColor = AppColors.card,
+    Color iconColor = AppColors.textSecondary,
+  }) {
+    return Semantics(
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            shape: BoxShape.circle,
+            boxShadow: AppColors.shadowMd,
+            border: Border.all(color: AppColors.border, width: 1.2),
           ),
-          boxShadow: _isOnline ? AppColors.shadowPrimary : AppColors.shadowSm,
+          child: Icon(icon, color: iconColor, size: 26),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-              color: _isOnline ? AppColors.primary : AppColors.textMuted,
-              size: 18,
+      ),
+    );
+  }
+
+  /// مفتاح الاتصال/عدم الاتصال (Online/Offline) — تصميم بريميوم عصري.
+  Widget _buildOnlineToggleButton() {
+    final isOnline = _isOnline;
+    // ألوان الحالة: أخضر زمردي نابض للاتصال، رمادي سليت أنيق لعدم الاتصال.
+    final bgColor = isOnline
+        ? const Color(0xFF10B981)
+        : const Color(0xFF334155);
+    final bgColorDark = isOnline
+        ? const Color(0xFF059669)
+        : const Color(0xFF1E293B);
+    final fgColor = Colors.white;
+    final dotColor = isOnline
+        ? const Color(0xFF6EE7B7)
+        : const Color(0xFF94A3B8);
+
+    return Semantics(
+      label: isOnline ? 'إيقاف الاتصال' : 'تشغيل الاتصال',
+      child: GestureDetector(
+        onTap: _toggleOnlineStatus,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOut,
+          width: double.infinity,
+          height: 60,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [bgColor, bgColorDark],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            const SizedBox(width: 6),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Text(
-                _isOnline ? 'متصل' : 'غير متصل',
-                key: ValueKey(_isOnline),
-                style: AppTextStyles.labelSmall?.copyWith(
-                  color: _isOnline ? AppColors.primary : AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: (isOnline ? const Color(0xFF10B981) : Colors.black)
+                    .withValues(alpha: isOnline ? 0.35 : 0.30),
+                blurRadius: 22,
+                offset: const Offset(0, 10),
+              ),
+            ],
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              // نقطة حالة نابضة
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: dotColor.withValues(alpha: 0.6),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        isOnline ? 'متصل الآن' : 'غير متصل',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.button?.copyWith(
+                          color: fgColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Flexible(
+                      child: Text(
+                        isOnline
+                            ? 'اضغط للانتقال للوضع غير المتصل'
+                            : 'اضغط للاتصال واستقبال الرحلات',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.labelSmall?.copyWith(
+                          color: fgColor.withValues(alpha: 0.75),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                color: fgColor,
+                size: 26,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -470,9 +1019,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           topLeft: Radius.circular(AppSpacing.radiusXxl),
           topRight: Radius.circular(AppSpacing.radiusXxl),
         ),
-        border: Border(
-          top: BorderSide(color: AppColors.border, width: 1),
-        ),
+        border: Border(top: BorderSide(color: AppColors.border, width: 1)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primary.withValues(alpha: 0.08),

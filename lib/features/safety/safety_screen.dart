@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import 'package:waslny_captain/core/theme/app_theme.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/safety_service.dart';
 import 'package:waslny_captain/core/repositories/safety_repository.dart';
@@ -410,7 +411,7 @@ class _SafetyScreenState extends State<SafetyScreen>
             ),
             child: Icon(
               Icons.location_on,
-              color: _isSharing ? Colors.greenAccent : Colors.white38,
+              color: _isSharing ? Colors.greenAccent : AppColors.textMuted,
               size: 28,
             ),
           ),
@@ -431,7 +432,7 @@ class _SafetyScreenState extends State<SafetyScreen>
                       ? 'موقعك مرئي الآن لجهات الاتصال'
                       : 'شارك موقعك لحظة بلحظة مع جهات الاتصال',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.white54,
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ],
@@ -462,7 +463,11 @@ class _SafetyScreenState extends State<SafetyScreen>
       children: [
         Row(
           children: [
-            const Icon(Icons.contacts, color: Colors.white70, size: 20),
+            const Icon(
+              Icons.contacts,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
             const SizedBox(width: 8),
             Text(
               'جهات الاتصال في الطوارئ',
@@ -497,16 +502,20 @@ class _SafetyScreenState extends State<SafetyScreen>
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.person_add_alt_1, size: 40, color: Colors.white24),
+                  Icon(
+                    Icons.person_add_alt_1,
+                    size: 40,
+                    color: AppColors.textMuted,
+                  ),
                   const SizedBox(height: 8),
                   const Text(
                     'لا توجد جهات اتصال',
-                    style: TextStyle(color: Colors.white38),
+                    style: TextStyle(color: AppColors.textMuted),
                   ),
                   const SizedBox(height: 4),
                   const Text(
                     'أضف جهات اتصال ليتم إشعارهم في حالات الطوارئ',
-                    style: TextStyle(color: Colors.white24, fontSize: 12),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -553,7 +562,7 @@ class _SafetyScreenState extends State<SafetyScreen>
                         Text(
                           contact.phone,
                           style: const TextStyle(
-                            color: Colors.white54,
+                            color: AppColors.textSecondary,
                             fontSize: 13,
                           ),
                         ),
@@ -561,7 +570,7 @@ class _SafetyScreenState extends State<SafetyScreen>
                           Text(
                             contact.relationship,
                             style: const TextStyle(
-                              color: Colors.white38,
+                              color: AppColors.textMuted,
                               fontSize: 12,
                             ),
                           ),
@@ -592,7 +601,7 @@ class _SafetyScreenState extends State<SafetyScreen>
       children: [
         Row(
           children: [
-            const Icon(Icons.history, color: Colors.white70, size: 20),
+            const Icon(Icons.history, color: AppColors.textSecondary, size: 20),
             const SizedBox(width: 8),
             Text(
               'سجل إشارات الاستغاثة',
@@ -621,7 +630,7 @@ class _SafetyScreenState extends State<SafetyScreen>
             child: const Center(
               child: Text(
                 'لا يوجد سابق استغاثة',
-                style: TextStyle(color: Colors.white38),
+                style: TextStyle(color: AppColors.textMuted),
               ),
             ),
           )
@@ -653,7 +662,7 @@ class _SafetyScreenState extends State<SafetyScreen>
                         Text(
                           _formatDate(alert.createdAt),
                           style: const TextStyle(
-                            color: Colors.white38,
+                            color: AppColors.textMuted,
                             fontSize: 12,
                           ),
                         ),
@@ -661,7 +670,11 @@ class _SafetyScreenState extends State<SafetyScreen>
                     ),
                   ),
                   if (alert.latitude != null && alert.longitude != null)
-                    Icon(Icons.location_on, size: 16, color: Colors.white24),
+                    Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: AppColors.textMuted,
+                    ),
                 ],
               ),
             );
@@ -683,7 +696,7 @@ class _SafetyScreenState extends State<SafetyScreen>
           size: 20,
         );
       case SOSStatus.cancelled:
-        return const Icon(Icons.cancel, color: Colors.white38, size: 20);
+        return const Icon(Icons.cancel, color: AppColors.textMuted, size: 20);
     }
   }
 
@@ -694,7 +707,7 @@ class _SafetyScreenState extends State<SafetyScreen>
       case SOSStatus.resolved:
         return Colors.greenAccent;
       case SOSStatus.cancelled:
-        return Colors.white38;
+        return AppColors.textMuted;
     }
   }
 

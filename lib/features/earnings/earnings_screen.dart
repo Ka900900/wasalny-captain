@@ -2,18 +2,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import 'package:waslny_captain/core/theme/app_theme.dart';
 import 'package:waslny_captain/core/models/earnings_data.dart';
 import 'package:waslny_captain/core/repositories/earnings_repository.dart';
-import 'package:waslny_captain/core/services/auth_service.dart';
 
 /// Period selector tabs.
 enum EarningsTab { daily, weekly, monthly }
 
 /// Full earnings screen with period switching, bar chart and trip statistics.
 ///
-/// Data is fetched from Firestore via [EarningsRepository]; when the
-/// repository returns sample data (no real rides yet) the screen shows
-/// realistic demo figures.
+/// Data is fetched live from the Waslny Backend API via [EarningsRepository]
+/// (`GET /api/v1/driver/earnings?period=...`). There is no fallback to fake
+/// or sample data — if the request fails (expired token, server error, or no
+/// connectivity) a clear Arabic error message with a retry button is shown to
+/// the captain instead of silently hiding the problem.
 class EarningsScreen extends StatefulWidget {
   const EarningsScreen({super.key});
 
@@ -26,6 +28,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
 
   EarningsData? _data;
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -34,23 +37,23 @@ class _EarningsScreenState extends State<EarningsScreen> {
   }
 
   Future<void> _fetchData() async {
-    setState(() => _loading = true);
-    final uid = AuthService.instance.currentUser?.uid ?? '';
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final data = switch (_currentTab) {
-        EarningsTab.daily => await EarningsRepository.instance.fetchDaily(
-          captainId: uid,
-        ),
-        EarningsTab.weekly => await EarningsRepository.instance.fetchWeekly(
-          captainId: uid,
-        ),
-        EarningsTab.monthly => await EarningsRepository.instance.fetchMonthly(
-          captainId: uid,
-        ),
+        EarningsTab.daily => await EarningsRepository.instance.fetchDaily(),
+        EarningsTab.weekly => await EarningsRepository.instance.fetchWeekly(),
+        EarningsTab.monthly => await EarningsRepository.instance.fetchMonthly(),
       };
       if (mounted) setState(() => _data = data);
+    } on EarningsException catch (e) {
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      // Keep previous data if any
+      if (mounted) {
+        setState(() => _error = 'تعذر تحميل بيانات الأرباح، حاول مجدداً');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -90,11 +93,13 @@ class _EarningsScreenState extends State<EarningsScreen> {
                         color: Color(0xFF7ED957),
                       ),
                     )
+                  : _error != null
+                  ? _buildError(_error!)
                   : _data == null
                   ? const Center(
                       child: Text(
                         'لا توجد بيانات',
-                        style: TextStyle(color: Colors.white38),
+                        style: TextStyle(color: AppColors.textMuted),
                       ),
                     )
                   : _buildContent(),
@@ -143,12 +148,46 @@ class _EarningsScreenState extends State<EarningsScreen> {
             child: Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.black : Colors.white70,
+                color: isSelected ? Colors.black : AppColors.textSecondary,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // ── Error state ──────────────────────────────────────
+
+  Widget _buildError(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _fetchData,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7ED957),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('إعادة المحاولة'),
+            ),
+          ],
         ),
       ),
     );
@@ -210,7 +249,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
           const SizedBox(height: 6),
           Text(
             suffix,
-            style: const TextStyle(color: Colors.white54, fontSize: 14),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
           ),
         ],
       ),
@@ -226,7 +265,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
         child: Center(
           child: Text(
             'لا توجد بيانات كافية',
-            style: TextStyle(color: Colors.white38),
+            style: TextStyle(color: AppColors.textMuted),
           ),
         ),
       );
@@ -291,7 +330,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
                         return Text(
                           '${value.toInt()}',
                           style: const TextStyle(
-                            color: Colors.white38,
+                            color: AppColors.textMuted,
                             fontSize: 10,
                           ),
                         );
@@ -318,8 +357,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
                             label,
-                            style: const TextStyle(
-                              color: Colors.white54,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
                               fontSize: 10,
                             ),
                           ),
@@ -411,10 +450,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white38, fontSize: 11),
-        ),
+        Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
       ],
     );
   }
@@ -488,8 +524,8 @@ class _EarningsScreenState extends State<EarningsScreen> {
                       ),
                       child: Text(
                         '${p.tripCount} رحلات',
-                        style: const TextStyle(
-                          color: Colors.white38,
+                        style: TextStyle(
+                          color: AppColors.textMuted,
                           fontSize: 11,
                         ),
                       ),

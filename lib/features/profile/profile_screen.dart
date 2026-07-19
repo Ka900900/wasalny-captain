@@ -1,10 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:waslny_captain/widgets/image_source_picker.dart';
 
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
 import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
+import 'package:waslny_captain/core/services/image_upload_service.dart';
 import 'package:waslny_captain/features/auth/vehicle_info_screen.dart';
 import 'package:waslny_captain/features/earnings/earnings_screen.dart';
 import 'package:waslny_captain/features/profile/edit_profile_screen.dart';
@@ -24,6 +28,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoggingOut = false;
+  bool _isUploading = false;
   final DatabaseService _dbService = DatabaseService();
 
   // ──────────────────────────────────────────────
@@ -50,6 +55,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
       }
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // Pick & upload profile photo (via Railway backend)
+  // ──────────────────────────────────────────────
+
+  /// يختار الكابتن صورة جديدة ثم يرفعها إلى الـ Backend (محمي بـ JWT)
+  /// ويحدّث حقل `photoUrl` في Firestore فورًا. يعرض مؤشر تحميل أثناء الرفع
+  /// وينبّه عند الفشل دون إغلاق التطبيق.
+  Future<void> _pickAndUploadPhoto(DriverProfile? profile) async {
+    final uid = AuthService.instance.currentUser?.uid;
+    if (uid == null || !mounted) return;
+
+    final picked = await pickImageWithSourceSheet(context);
+    if (picked == null) return; // المستخدم ألغى الاختيار
+
+    if (!mounted) return;
+    setState(() => _isUploading = true);
+
+    try {
+      final imageUrl = await ImageUploadService.instance.uploadImage(
+        type: UploadType.profile,
+        file: File(picked.path),
+      );
+
+      if (!mounted) return;
+
+      if (imageUrl == null) {
+        // فشل الرفع (شبكة/401/500)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر رفع الصورة. تحقق من الاتصال وحاول مرة أخرى.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+
+      // تحديث حقل photoUrl فقط في Firestore (merge — دون مسح باقي الحقول)
+      await DriverRepository.instance.updateProfile(
+        uid: uid,
+        updates: {'photoUrl': imageUrl},
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تحديث الصورة الشخصية بنجاح')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'حدث خطأ أثناء رفع الصورة: ${e.toString().replaceAll(RegExp(r'^Exception: '), '')}',
+            ),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -90,6 +158,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
+
+  // ──────────────────────────────────────────────
+  // Document compliance banner
+  // ──────────────────────────────────────────────
+
+  Widget _buildDocumentsBanner(DriverProfile profile) {
+    final now = DateTime.now();
+    final status = profile.compliance(now);
+    if (status == DocumentCompliance.submitted) return const SizedBox.shrink();
+    late final String text;
+    late final Color color;
+    if (status == DocumentCompliance.banned) {
+      final until = profile.banUntil;
+      text = until != null
+          ? 'تم حظرك لعدم رفع المستندات المطلوبة (حتى ${_fmtProfileDate(until)})'
+          : 'تم حظرك لعدم رفع المستندات المطلوبة';
+      color = AppColors.error;
+    } else {
+      final daysLeft = profile.daysLeftInGrace(now);
+      text = 'متبقٍ $daysLeft يوم لرفع المستندات قبل الحظر';
+      color = AppColors.warning;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EditProfileScreen(profile: profile),
+            ),
+          );
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(color: color.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: color),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  text,
+                  style: AppTextStyles.bodyMedium?.copyWith(color: color),
+                ),
+              ),
+              Icon(Icons.chevron_left, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmtProfileDate(DateTime d) =>
+      '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
 
   // ──────────────────────────────────────────────
   // Build
@@ -229,6 +358,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           physics: const BouncingScrollPhysics(),
                           children: [
+                            if (profile != null) _buildDocumentsBanner(profile),
                             // small header showing name from captain if available
                             if (captain != null) ...[
                               Text(
@@ -449,40 +579,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: BoxDecoration(
               gradient: AppColors.primaryGradient,
               borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-              border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.2),
+              ),
               boxShadow: AppColors.shadowMd,
             ),
             child: Row(
               children: [
-                // Avatar with edit badge
-                Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 38,
-                      backgroundColor: AppColors.cardElevated,
-                      backgroundImage: photoUrl != null
-                          ? NetworkImage(photoUrl) as ImageProvider
-                          : const AssetImage('assets/myimage.jpg'),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppColors.bg, width: 2),
+                // Avatar with edit badge (tap to change photo)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _pickAndUploadPhoto(profile),
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 38,
+                        backgroundColor: AppColors.cardElevated,
+                        backgroundImage:
+                            (photoUrl != null && photoUrl.isNotEmpty)
+                            ? NetworkImage(photoUrl) as ImageProvider
+                            : const AssetImage('assets/myimage.jpg'),
+                      ),
+                      // مؤشر التحميل أثناء رفع الصورة
+                      if (_isUploading)
+                        Positioned.fill(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 3,
+                            ),
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.edit_rounded,
-                          color: AppColors.textOnPrimary,
-                          size: 11,
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.bg, width: 2),
+                          ),
+                          child: const Icon(
+                            Icons.edit_rounded,
+                            color: AppColors.textOnPrimary,
+                            size: 11,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.lg),
 

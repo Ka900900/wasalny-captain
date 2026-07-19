@@ -18,6 +18,7 @@ class TripStatusCard extends StatelessWidget {
   final VoidCallback onMarkStarted;
   final VoidCallback onMarkCompleted;
   final VoidCallback onBackToHome;
+  final VoidCallback? onOpenChat;
 
   const TripStatusCard({
     super.key,
@@ -33,6 +34,7 @@ class TripStatusCard extends StatelessWidget {
     required this.onMarkStarted,
     required this.onMarkCompleted,
     required this.onBackToHome,
+    this.onOpenChat,
   });
 
   @override
@@ -51,6 +53,7 @@ class TripStatusCard extends StatelessWidget {
           distance: distance ?? '',
           etaText: etaText,
           onMarkArrived: onMarkArrived,
+          onOpenChat: onOpenChat,
         );
       case 'arrived':
         return _ArrivedCard(
@@ -61,6 +64,7 @@ class TripStatusCard extends StatelessWidget {
               '...',
           price: price ?? tripDoc?['price'] as String? ?? '...',
           onMarkStarted: onMarkStarted,
+          onOpenChat: onOpenChat,
         );
       case 'started':
         return _StartedCard(
@@ -75,6 +79,7 @@ class TripStatusCard extends StatelessWidget {
           distance: distance ?? '',
           etaText: etaText,
           onMarkCompleted: onMarkCompleted,
+          onOpenChat: onOpenChat,
         );
       case 'completed':
         return _CompletedCard(
@@ -101,6 +106,7 @@ class _AcceptedCard extends StatelessWidget {
   final String distance;
   final String? etaText;
   final VoidCallback onMarkArrived;
+  final VoidCallback? onOpenChat;
 
   const _AcceptedCard({
     required this.riderName,
@@ -110,6 +116,7 @@ class _AcceptedCard extends StatelessWidget {
     required this.distance,
     this.etaText,
     required this.onMarkArrived,
+    this.onOpenChat,
   });
 
   @override
@@ -134,6 +141,8 @@ class _AcceptedCard extends StatelessWidget {
           _FareDistanceRow(distance: distance, price: price),
           if (etaText != null) _EtaRow(etaText: etaText!),
           const SizedBox(height: 16),
+          if (onOpenChat != null) _ChatButton(onOpenChat: onOpenChat!),
+          if (onOpenChat != null) const SizedBox(height: 10),
           _ActionButton(
             label: '✅ وصلت',
             color: AppColors.success,
@@ -154,18 +163,20 @@ class _ArrivedCard extends StatelessWidget {
   final String destination;
   final String price;
   final VoidCallback onMarkStarted;
+  final VoidCallback? onOpenChat;
 
   const _ArrivedCard({
     required this.riderName,
     required this.destination,
     required this.price,
     required this.onMarkStarted,
+    this.onOpenChat,
   });
 
   @override
   Widget build(BuildContext context) {
     return _TripCardContainer(
-      borderColor: AppColors.warning.withValues(alpha: 0.5),
+      borderColor: AppColors.info.withValues(alpha: 0.5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -174,13 +185,15 @@ class _ArrivedCard extends StatelessWidget {
             riderName: riderName,
             badgeIcon: Icons.access_time,
             badgeText: 'في الانتظار',
-            badgeColor: AppColors.warning,
+            badgeColor: AppColors.info,
           ),
           const SizedBox(height: 14),
           _DestinationRow(address: destination),
           const SizedBox(height: 16),
           _FareRow(price: price),
           const SizedBox(height: 16),
+          if (onOpenChat != null) _ChatButton(onOpenChat: onOpenChat!),
+          if (onOpenChat != null) const SizedBox(height: 10),
           _ActionButton(
             label: '🚗 بدأت الرحلة',
             color: AppColors.primary,
@@ -204,6 +217,7 @@ class _StartedCard extends StatelessWidget {
   final String distance;
   final String? etaText;
   final VoidCallback onMarkCompleted;
+  final VoidCallback? onOpenChat;
 
   const _StartedCard({
     required this.riderName,
@@ -213,6 +227,7 @@ class _StartedCard extends StatelessWidget {
     required this.distance,
     this.etaText,
     required this.onMarkCompleted,
+    this.onOpenChat,
   });
 
   @override
@@ -237,6 +252,8 @@ class _StartedCard extends StatelessWidget {
           _FareDistanceRow(distance: distance, price: price),
           if (etaText != null) _EtaRow(etaText: etaText!),
           const SizedBox(height: 16),
+          if (onOpenChat != null) _ChatButton(onOpenChat: onOpenChat!),
+          if (onOpenChat != null) const SizedBox(height: 10),
           _ActionButton(
             label: '✅ أكملت',
             color: AppColors.success,
@@ -593,6 +610,33 @@ class _ActionButton extends StatelessWidget {
               fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Chat button shown on active trip cards — opens the real-time chat.
+class _ChatButton extends StatelessWidget {
+  final VoidCallback onOpenChat;
+
+  const _ChatButton({required this.onOpenChat});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 44,
+      child: OutlinedButton.icon(
+        onPressed: onOpenChat,
+        icon: const Icon(Icons.chat_bubble_outline, size: 18),
+        label: const Text('محادثة الراكب'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
           ),
         ),
       ),

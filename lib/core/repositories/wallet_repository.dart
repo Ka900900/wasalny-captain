@@ -12,11 +12,20 @@ import 'package:waslny_captain/core/services/api_service.dart';
 /// - `wallets/{uid}/transactions/{txId}` → individual transactions
 /// - `wallets/{uid}/withdraws/{wdId}`    → withdrawal requests
 ///
-/// When no data exists yet, [WalletRepository] returns realistic sample data
-/// so the UI is never empty during development.
+/// When a captain has no wallet data yet, the repository returns an **empty**
+/// wallet (0 balance, no transactions / withdrawals / payment methods) so a
+/// newly-registered captain always sees a correct, clean state.
+///
+/// Sample/demo data is still available but is **opt-in** via
+/// [WalletRepository.devShowSampleData] and must never be `true` in
+/// production builds.
 class WalletRepository {
   WalletRepository._();
   static final WalletRepository instance = WalletRepository._();
+
+  /// Opt-in demo data. Keep `false` in production so new captains see an
+  /// EMPTY wallet instead of fake numbers.
+  static const bool devShowSampleData = false;
 
   final ApiService _api = ApiService.instance;
 
@@ -63,10 +72,12 @@ class WalletRepository {
 
     try {
       final doc = await _walletRef(uid).get();
-      if (!doc.exists || doc.data() == null) return _sampleWalletData();
+      if (!doc.exists || doc.data() == null) {
+        return devShowSampleData ? _sampleWalletData() : WalletData();
+      }
       return WalletData.fromMap(doc.data()!);
     } catch (_) {
-      return _sampleWalletData();
+      return devShowSampleData ? _sampleWalletData() : WalletData();
     }
   }
 
@@ -74,7 +85,9 @@ class WalletRepository {
   /// Uses Firestore for real-time updates (falls back to polling).
   Stream<WalletData> streamWallet(String uid) {
     return _walletRef(uid).snapshots().map((doc) {
-      if (!doc.exists || doc.data() == null) return _sampleWalletData();
+      if (!doc.exists || doc.data() == null) {
+        return devShowSampleData ? _sampleWalletData() : WalletData();
+      }
       return WalletData.fromMap(doc.data()!);
     });
   }
@@ -127,12 +140,14 @@ class WalletRepository {
       final snap = await _txRef(
         uid,
       ).orderBy('createdAt', descending: true).limit(limit).get();
-      if (snap.docs.isEmpty) return _sampleTransactions();
+      if (snap.docs.isEmpty) {
+        return devShowSampleData ? _sampleTransactions() : [];
+      }
       return snap.docs
           .map((d) => WalletTransaction.fromMap(d.id, d.data()))
           .toList();
     } catch (_) {
-      return _sampleTransactions();
+      return devShowSampleData ? _sampleTransactions() : [];
     }
   }
 
@@ -178,12 +193,14 @@ class WalletRepository {
       final snap = await _withdrawRef(
         uid,
       ).orderBy('createdAt', descending: true).get();
-      if (snap.docs.isEmpty) return _sampleWithdrawRequests();
+      if (snap.docs.isEmpty) {
+        return devShowSampleData ? _sampleWithdrawRequests() : [];
+      }
       return snap.docs
           .map((d) => WithdrawRequest.fromMap(d.id, d.data()))
           .toList();
     } catch (_) {
-      return _sampleWithdrawRequests();
+      return devShowSampleData ? _sampleWithdrawRequests() : [];
     }
   }
 
@@ -194,6 +211,9 @@ class WalletRepository {
     required String bankAccount,
     String? bankName,
     String? accountHolder,
+    String? paymentMethodId,
+    String? paymentMethodType,
+    String? paymentMethodLabel,
   }) async {
     await _withdrawRef(uid).add({
       'amount': amount,
@@ -201,6 +221,9 @@ class WalletRepository {
       'bankAccount': bankAccount,
       'bankName': bankName,
       'accountHolder': accountHolder,
+      'paymentMethodId': paymentMethodId,
+      'paymentMethodType': paymentMethodType,
+      'paymentMethodLabel': paymentMethodLabel,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -214,13 +237,52 @@ class WalletRepository {
   Future<List<PaymentMethod>> fetchPaymentMethods(String uid) async {
     try {
       final snap = await _pmRef(uid).get();
-      if (snap.docs.isEmpty) return _samplePaymentMethods();
+      if (snap.docs.isEmpty) {
+        return devShowSampleData ? _samplePaymentMethods() : [];
+      }
       return snap.docs
           .map((d) => PaymentMethod.fromMap(d.id, d.data()))
           .toList();
     } catch (_) {
-      return _samplePaymentMethods();
+      return devShowSampleData ? _samplePaymentMethods() : [];
     }
+  }
+
+  /// Adds a new payment method and returns its document id.
+  ///
+  /// [isDefault] is auto-true when it's the captain's first method.
+  Future<String> addPaymentMethod(
+    String uid, {
+    required String type,
+    required String label,
+    String? accountNumber,
+    String? bankName,
+    bool isDefault = false,
+  }) async {
+    final ref = await _pmRef(uid).add({
+      'type': type,
+      'label': label,
+      'accountNumber': accountNumber,
+      'bankName': bankName,
+      'isDefault': isDefault,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return ref.id;
+  }
+
+  /// Deletes a saved payment method.
+  Future<void> deletePaymentMethod(String uid, String id) async {
+    await _pmRef(uid).doc(id).delete();
+  }
+
+  /// Marks a single payment method as default, clearing all others.
+  Future<void> setDefaultPaymentMethod(String uid, String id) async {
+    final batch = FirebaseFirestore.instance.batch();
+    final all = await _pmRef(uid).get();
+    for (final d in all.docs) {
+      batch.update(d.reference, {'isDefault': d.id == id});
+    }
+    await batch.commit();
   }
 
   // ──────────────────────────────────────────────────────

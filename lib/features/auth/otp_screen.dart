@@ -30,6 +30,8 @@ class _OTPScreenState extends State<OTPScreen>
   String? _errorMessage;
   int _resendSeconds = 30;
   bool _canResend = false;
+  String? _currentVerificationId;
+  bool _isResending = false;
 
   late final AnimationController _animController;
   late final Animation<double> _fadeIn;
@@ -78,6 +80,37 @@ class _OTPScreenState extends State<OTPScreen>
     });
   }
 
+  Future<void> _resendCode() async {
+    if (_isResending) return;
+    setState(() => _isResending = true);
+
+    _startResendTimer();
+    debugPrint("📤 Resending OTP to ${widget.phoneNumber}");
+
+    await AuthService.instance.verifyPhoneNumber(
+      widget.phoneNumber,
+      (newVerificationId) {
+        if (!mounted) return;
+        setState(() {
+          _currentVerificationId = newVerificationId;
+          _isResending = false;
+        });
+        debugPrint("✅ New verificationId received: $newVerificationId");
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إعادة إرسال رمز التحقق')),
+        );
+      },
+      (error) {
+        if (!mounted) return;
+        setState(() => _isResending = false);
+        debugPrint("❌ Resend failed: $error");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppColors.error),
+        );
+      },
+    );
+  }
+
   Future<void> _verifyOTP() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -85,9 +118,12 @@ class _OTPScreenState extends State<OTPScreen>
       _errorMessage = null;
     });
     try {
+      final verificationId = _currentVerificationId ?? widget.verificationId;
+      debugPrint("🔐 Using verificationId: $verificationId");
+
       // 1. Verify OTP and sign in with Firebase
       final firebaseToken = await AuthService.instance.verifyOTP(
-        widget.verificationId,
+        verificationId,
         _pinController.text.trim(),
       );
 
@@ -400,24 +436,28 @@ class _OTPScreenState extends State<OTPScreen>
                                   ),
                                 ),
                                 child: TextButton.icon(
-                                  onPressed: () {
-                                    _startResendTimer();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'تم إعادة إرسال رمز التحقق',
+                                  onPressed: _isResending ? null : _resendCode,
+                                  icon: _isResending
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.primary,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.refresh,
+                                          color: AppColors.primary,
+                                          size: 18,
                                         ),
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(
-                                    Icons.refresh,
-                                    color: AppColors.primary,
-                                    size: 18,
-                                  ),
-                                  label: const Text(
-                                    'إعادة إرسال الرمز',
-                                    style: TextStyle(color: AppColors.primary),
+                                  label: Text(
+                                    _isResending
+                                        ? 'جارٍ الإرسال...'
+                                        : 'إعادة إرسال الرمز',
+                                    style: const TextStyle(
+                                      color: AppColors.primary,
+                                    ),
                                   ),
                                 ),
                               )

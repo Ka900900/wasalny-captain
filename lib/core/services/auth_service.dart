@@ -1,20 +1,24 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:waslny_captain/core/services/api_service.dart';
+import 'package:waslny_captain/core/services/notification_service.dart';
 
 /// Service responsible for all Firebase Authentication operations.
 ///
-/// Wraps [FirebaseAuth] to provide a clean API for phone-based driver
-/// authentication, session management, and logout.
+/// Wraps [FirebaseAuth] to provide a clean API for driver authentication
+/// (Google Sign-In), session management, and logout.
 class AuthService {
   /// Singleton pattern — use [AuthService.instance] everywhere.
   AuthService._();
   static final AuthService instance = AuthService._();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  static const String _backendBaseUrl = 'http://192.168.1.10:3000/api/v1';
+  static const String _backendBaseUrl =
+      'https://wasalny-backend-production.up.railway.app/api/v1';
 
   // ──────────────────────────────────────────────
   // Streams
@@ -58,9 +62,14 @@ class AuthService {
           }
         },
         verificationFailed: (FirebaseAuthException exception) {
+          print("❌ verificationFailed");
+          print("Code: ${exception.code}");
+          print("Message: ${exception.message}");
           onError(_mapFirebaseError(exception));
         },
         codeSent: (String verificationId, int? resendToken) {
+          print("✅ codeSent");
+          print("Verification ID: $verificationId");
           onCodeSent(verificationId);
         },
         codeAutoRetrievalTimeout: (String verificationId) {
@@ -142,6 +151,83 @@ class AuthService {
   }
 
   // ──────────────────────────────────────────────
+  // Google Sign-In
+  // ──────────────────────────────────────────────
+
+  /// Signs in with Google, exchanges the credential with Firebase, obtains
+  /// the Firebase ID Token, then sends it to the backend for the app JWT.
+  ///
+  /// Returns the backend response map (contains the app JWT).
+  /// Throws on any failure.
+  Future<Map<String, dynamic>> signInWithGoogle() async {
+    try {
+      // 1. Trigger Google Sign-In flow
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        throw FirebaseAuthException(
+          code: 'cancelled',
+          message: 'تم إلغاء تسجيل الدخول بواسطة جوجل.',
+        );
+      }
+
+      // 2. Obtain Google authentication details
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      if (googleAuth.idToken == null) {
+        throw FirebaseAuthException(
+          code: 'no-id-token',
+          message: 'فشل في الحصول على معرف Google ID Token.',
+        );
+      }
+
+      // 3. Create Firebase credential and sign in
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final result = await _auth.signInWithCredential(credential);
+      final user = result.user;
+      if (user == null) {
+        throw FirebaseAuthException(
+          code: 'user-null',
+          message: 'لم يتم إنشاء حساب Firebase بعد التحقق من جوجل.',
+        );
+      }
+
+      // 4. Get the Firebase ID Token
+      final firebaseToken = await user.getIdToken(true);
+      if (firebaseToken == null || firebaseToken.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'token-error',
+          message: 'فشل في استخراج Firebase ID Token.',
+        );
+      }
+
+      // 5. Exchange Firebase Token → Backend JWT
+      final jwt = await loginWithBackend(firebaseToken);
+
+      return {
+        'token': jwt,
+        'firebaseToken': firebaseToken,
+        'message': 'تم تسجيل الدخول بنجاح',
+      };
+    } on FirebaseAuthException {
+      rethrow;
+    } catch (exception) {
+      throw Exception('فشل تسجيل الدخول بحساب جوجل: $exception');
+    }
+  }
+
+  /// Disconnects the Google Sign-In session (useful for switching accounts).
+  Future<void> disconnectGoogle() async {
+    final GoogleSignIn googleSignIn = GoogleSignIn();
+    if (await googleSignIn.isSignedIn()) {
+      await googleSignIn.disconnect();
+    }
+  }
+
+  // ──────────────────────────────────────────────
   // App JWT (Exchange Firebase Token → Backend JWT)
   // ──────────────────────────────────────────────
 
@@ -162,18 +248,23 @@ class AuthService {
   /// Exchanges the Firebase ID Token with the Node.js backend and returns the
   /// app JWT used by the backend APIs.
   Future<String> loginWithBackend(String firebaseToken) async {
+    // Backend disabled → run on Firebase only (no custom JWT exchange).
+    if (!ApiService.backendEnabled) return '';
     try {
       final response = await http.post(
-        Uri.parse('$_backendBaseUrl/auth/firebase'),
+        Uri.parse('$_backendBaseUrl/auth/firebase-login'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({'idToken': firebaseToken}),
+        body: jsonEncode({'firebaseIdToken': firebaseToken}),
       );
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        // DEBUG: اطبع رسالة الخطأ الكاملة من السيرفر قبل الرمي
+        print('[loginWithBackend] body[error] = ${body['error']}');
+        print('[loginWithBackend] full body = $body');
         throw ApiException(
           message: body['error'] as String? ?? 'فشل تسجيل الدخول مع الخادم',
           statusCode: response.statusCode,
@@ -189,6 +280,14 @@ class AuthService {
       }
 
       ApiService.instance.saveToken(jwt);
+      // TODO(temp-debug): remove after grabbing the JWT for manual endpoint testing
+      print('=== JWT TOKEN: ${ApiService.instance.getToken()} ===');
+
+      // Register the FCM token with the backend so the server can send this
+      // captain real ride-alert push notifications. Fire-and-forget: failures
+      // are logged inside the service and must not break the login flow.
+      unawaited(NotificationService.instance.registerTokenWithBackend());
+
       return jwt;
     } on ApiException {
       rethrow;

@@ -7,39 +7,39 @@ class AppColors {
 
   // Primary Background
   static const Color primaryBg = Color(0xFF0D0D0D);
-  
+
   // Secondary Background
   static const Color secondaryBg = Color(0xFF151515);
-  
+
   // Surface
   static const Color surface = Color(0xFF1E1E1E);
-  
+
   // Cards
   static const Color card = Color(0xFF242424);
   static const Color cardElevated = Color(0xFF2A2A2A);
 
   // Text
   static const Color textPrimary = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0xFFBDBDBD);
-  static const Color textMuted = Color(0xFF8A8A8A);
+  static const Color textSecondary = Color(0xFFD6D6D6);
+  static const Color textMuted = Color(0xFFB3B3B3);
 
-  // Primary Accent
-  static const Color primary = Color(0xFF39FF14);
-  static const Color primaryDark = Color(0xFF2ED60F);
-  static const Color primaryLight = Color(0xFF5FFF35);
-  static const Color primaryFaded = Color(0x3339FF14);
-  static const Color primaryContainer = Color(0xFF0A1F08);
+  // Primary Accent — darker, eye-friendly green (#2E7D32 / green.shade800)
+  static const Color primary = Color(0xFF2E7D32);
+  static const Color primaryDark = Color(0xFF1B5E20);
+  static const Color primaryLight = Color(0xFF388E3C);
+  static const Color primaryFaded = Color(0x332E7D32);
+  static const Color primaryContainer = Color(0xFF0D2410);
 
   // Online Status
-  static const Color online = Color(0xFF39FF14);
+  static const Color online = Color(0xFF2E7D32);
 
   // Borders
   static const Color border = Color(0xFF303030);
   static const Color borderLight = Color(0xFF3A3A3A);
 
   // Semantic
-  static const Color success = Color(0xFF39FF14);
-  static const Color successContainer = Color(0xFF0A1F08);
+  static const Color success = Color(0xFF2E7D32);
+  static const Color successContainer = Color(0xFF0D2410);
   static const Color error = Color(0xFFFF4D4F);
   static const Color errorContainer = Color(0xFF2A0F0F);
   static const Color warning = Color(0xFFFFC107);
@@ -67,7 +67,7 @@ class AppColors {
   static const Color textOnPrimary = textPrimary;
 
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [primaryLight, primary],
+    colors: [primaryLight, primaryDark],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -110,7 +110,7 @@ class AppColors {
 
   static List<BoxShadow> shadowPrimary = [
     BoxShadow(
-      color: primary.withValues(alpha: 0.28),
+      color: primaryDark.withValues(alpha: 0.35),
       blurRadius: 18,
       offset: const Offset(0, 8),
     ),
@@ -332,7 +332,7 @@ class AppTheme {
       visualDensity: VisualDensity.adaptivePlatformDensity,
       colorScheme: const ColorScheme.dark(
         primary: AppColors.primary,
-        onPrimary: AppColors.textPrimary,
+        onPrimary: Colors.white,
         primaryContainer: AppColors.primaryContainer,
         secondary: AppColors.info,
         onSecondary: AppColors.textPrimary,
@@ -361,7 +361,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.primaryBg,
+          foregroundColor: Colors.white,
           disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.35),
           disabledForegroundColor: AppColors.primaryBg.withValues(alpha: 0.55),
           elevation: 0,

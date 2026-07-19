@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
 import 'package:waslny_captain/core/models/wallet_models.dart';
 import 'package:waslny_captain/core/repositories/wallet_repository.dart';
+import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
-import 'package:waslny_captain/core/services/kashier_service.dart';
 import 'package:waslny_captain/features/earnings/earnings_screen.dart';
+import 'package:waslny_captain/features/wallet/kashier_checkout_webview.dart';
 
 /// Wallet tab sections.
 enum WalletTab { transactions, withdraws, paymentMethods }
@@ -35,6 +36,11 @@ class _WalletScreenState extends State<WalletScreen> {
   bool _loadingWd = true;
   bool _loadingPm = true;
 
+  String _uid = '';
+
+  // Error shown when a withdrawal is submitted without picking a method
+  String? _methodError;
+
   StreamSubscription<WalletData>? _walletSubscription;
 
   @override
@@ -52,6 +58,7 @@ class _WalletScreenState extends State<WalletScreen> {
   Future<void> _loadAll() async {
     final uid = AuthService.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) return;
+    _uid = uid;
 
     // Wallet data – real-time stream
     _walletSubscription = WalletRepository.instance.streamWallet(uid).listen((
@@ -160,7 +167,7 @@ class _WalletScreenState extends State<WalletScreen> {
         children: [
           Text(
             'الرصيد الحالي',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 8),
           _loadingWallet
@@ -304,7 +311,9 @@ class _WalletScreenState extends State<WalletScreen> {
                     child: Text(
                       e.value,
                       style: TextStyle(
-                        color: isSelected ? Colors.black : Colors.white54,
+                        color: isSelected
+                            ? Colors.black
+                            : AppColors.textSecondary,
                         fontWeight: FontWeight.w600,
                         fontSize: 12,
                       ),
@@ -344,7 +353,10 @@ class _WalletScreenState extends State<WalletScreen> {
     }
     if (_transactions.isEmpty) {
       return const Center(
-        child: Text('لا توجد معاملات', style: TextStyle(color: Colors.white38)),
+        child: Text(
+          'لا توجد معاملات',
+          style: TextStyle(color: AppColors.textMuted),
+        ),
       );
     }
     return ListView.separated(
@@ -408,7 +420,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 const SizedBox(height: 2),
                 Text(
                   _formatDate(tx.createdAt),
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 11),
                 ),
               ],
             ),
@@ -460,7 +472,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return const Center(
         child: Text(
           'لا توجد طلبات سحب',
-          style: TextStyle(color: Colors.white38),
+          style: TextStyle(color: AppColors.textMuted),
         ),
       );
     }
@@ -530,10 +542,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
         ),
         const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white38, fontSize: 11),
-        ),
+        Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
       ],
     );
   }
@@ -558,7 +567,8 @@ class _WalletScreenState extends State<WalletScreen> {
         statusColor = Colors.redAccent;
         break;
       default:
-        statusColor = Colors.white38;
+        statusColor = AppColors.textMuted;
+        break;
     }
 
     return Container(
@@ -573,93 +583,8 @@ class _WalletScreenState extends State<WalletScreen> {
         children: [
           // Status emoji
           Text(r.statusIcon, style: const TextStyle(fontSize: 24)),
-          const SizedBox(width: 12),
-          // Details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${r.amount.toStringAsFixed(2)} ج.م',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (r.bankName != null)
-                  Text(
-                    r.bankName!,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                Text(
-                  _formatDate(r.createdAt),
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          // Status badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              r.statusLabel,
-              style: TextStyle(
-                color: statusColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
         ],
       ),
-    );
-  }
-
-  // ══════════════════════════════════════════════════════
-  // Payment Methods Tab
-  // ══════════════════════════════════════════════════════
-
-  Widget _buildPaymentMethodsTab() {
-    if (_loadingPm) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF7ED957)),
-      );
-    }
-    if (_paymentMethods.isEmpty) {
-      return const Center(
-        child: Text('لا توجد طرق دفع', style: TextStyle(color: Colors.white38)),
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      children: [
-        const SizedBox(height: 4),
-        ..._paymentMethods.map((pm) => _buildPaymentMethodTile(pm)),
-        const SizedBox(height: 16),
-        // Add new button
-        Center(
-          child: TextButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('قريباً - إضافة طريقة دفع جديدة'),
-                  backgroundColor: Color(0xFFF59E0B),
-                ),
-              );
-            },
-            icon: const Icon(Icons.add_circle, color: Color(0xFF7ED957)),
-            label: const Text(
-              'إضافة طريقة دفع',
-              style: TextStyle(color: Color(0xFF7ED957)),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -729,14 +654,362 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (pm.accountNumber != null)
                   Text(
                     pm.accountNumber!,
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
                   ),
               ],
             ),
           ),
-          const Icon(Icons.arrow_back_ios, color: Colors.white24, size: 16),
+          PopupMenuButton<String>(
+            color: const Color(0xFF1E1E1E),
+            icon: const Icon(
+              Icons.more_vert,
+              color: AppColors.textMuted,
+              size: 18,
+            ),
+            onSelected: (value) {
+              if (value == 'default') {
+                _setDefaultPaymentMethod(pm);
+              } else if (value == 'delete') {
+                _confirmDeletePaymentMethod(pm);
+              }
+            },
+            itemBuilder: (_) => [
+              if (!pm.isDefault)
+                const PopupMenuItem(
+                  value: 'default',
+                  child: Row(
+                    children: [
+                      Icon(Icons.star, color: Color(0xFF7ED957), size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'تعيين كأساسي',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.delete_outline,
+                      color: Colors.redAccent,
+                      size: 18,
+                    ),
+                    SizedBox(width: 8),
+                    Text('حذف', style: TextStyle(color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  // Payment Method management
+  // ══════════════════════════════════════════════════════
+
+  Future<void> _setDefaultPaymentMethod(PaymentMethod pm) async {
+    if (_uid.isEmpty) return;
+    await WalletRepository.instance.setDefaultPaymentMethod(_uid, pm.id);
+    _loadPaymentMethods(_uid);
+  }
+
+  void _confirmDeletePaymentMethod(PaymentMethod pm) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+          'حذف طريقة الدفع',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'هل تريد حذف "${pm.label}"؟',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'إلغاء',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (_uid.isEmpty) return;
+              await WalletRepository.instance.deletePaymentMethod(_uid, pm.id);
+              _loadPaymentMethods(_uid);
+            },
+            child: const Text('حذف', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddPaymentMethodSheet() async {
+    final labelCtrl = TextEditingController();
+    final accountCtrl = TextEditingController();
+    final bankCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    // 0 = bank, 1 = vodafone_cash, 2 = instapay
+    int selectedType = 0;
+    final types = const [
+      _PmType('bank', 'حساب بنكي', Icons.account_balance),
+      _PmType('vodafone_cash', 'فودافون كاش', Icons.phone_android),
+      _PmType('instapay', 'انستاباي', Icons.send),
+    ];
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final isBank = types[selectedType].type == 'bank';
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'إضافة طريقة دفع',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Type selector
+                    Row(
+                      children: types.asMap().entries.map((e) {
+                        final t = e.value;
+                        final selected = selectedType == e.key;
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () =>
+                                setSheetState(() => selectedType = e.key),
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? const Color(0xFF7ED957)
+                                    : Colors.white10,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected
+                                      ? const Color(0xFF7ED957)
+                                      : Colors.white24,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    t.icon,
+                                    color: selected
+                                        ? Colors.black
+                                        : AppColors.textSecondary,
+                                    size: 22,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    t.label,
+                                    style: TextStyle(
+                                      color: selected
+                                          ? Colors.black
+                                          : AppColors.textSecondary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    // Label
+                    TextFormField(
+                      controller: labelCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _pmInputDecoration(
+                        isBank ? 'اسم الحساب البنكي' : 'الاسم / الوصف',
+                        isBank ? 'مثال: حساب الأهلي' : 'مثال: رقمي الشخصي',
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'الرجاء إدخال وصف';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    // Account number
+                    TextFormField(
+                      controller: accountCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      keyboardType: TextInputType.number,
+                      decoration: _pmInputDecoration(
+                        isBank ? 'رقم الحساب' : 'رقم الحساب / المحفظة',
+                        'مثال: 1234567890',
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'الرجاء إدخال رقم الحساب';
+                        }
+                        return null;
+                      },
+                    ),
+                    if (isBank) ...[
+                      const SizedBox(height: 14),
+                      // Bank name
+                      TextFormField(
+                        controller: bankCtrl,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: _pmInputDecoration(
+                          'اسم البنك',
+                          'مثال: البنك الأهلي المصري',
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    // Save button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7ED957),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () async {
+                          if (!formKey.currentState!.validate()) return;
+                          if (_uid.isEmpty) return;
+                          final navigator = Navigator.of(context);
+                          await WalletRepository.instance.addPaymentMethod(
+                            _uid,
+                            type: types[selectedType].type,
+                            label: labelCtrl.text.trim(),
+                            accountNumber: accountCtrl.text.trim(),
+                            bankName: isBank ? bankCtrl.text.trim() : null,
+                            isDefault: _paymentMethods.isEmpty,
+                          );
+                          if (mounted) navigator.pop();
+                          _loadPaymentMethods(_uid);
+                        },
+                        child: const Text(
+                          'حفظ',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  InputDecoration _pmInputDecoration(String label, String hint) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: AppColors.textSecondary),
+      hintText: hint,
+      hintStyle: TextStyle(color: AppColors.textMuted),
+      filled: true,
+      fillColor: Colors.white10,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  // Payment Methods Tab
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildPaymentMethodsTab() {
+    if (_loadingPm) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF7ED957)),
+      );
+    }
+    if (_paymentMethods.isEmpty) {
+      return const Center(
+        child: Text(
+          'لا توجد طرق دفع',
+          style: TextStyle(color: AppColors.textMuted),
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      children: [
+        const SizedBox(height: 4),
+        ..._paymentMethods.map((pm) => _buildPaymentMethodTile(pm)),
+        const SizedBox(height: 16),
+        // Add new button
+        Center(
+          child: TextButton.icon(
+            onPressed: _showAddPaymentMethodSheet,
+            icon: const Icon(Icons.add_circle, color: Color(0xFF7ED957)),
+            label: const Text(
+              'إضافة طريقة دفع',
+              style: TextStyle(color: Color(0xFF7ED957)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -795,7 +1068,10 @@ class _WalletScreenState extends State<WalletScreen> {
                     const SizedBox(height: 8),
                     const Text(
                       'سيتم شحن المحفظة عبر Kashier (بطاقة ائتمان / محفظة إلكترونية)',
-                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 24),
                     // Amount
@@ -833,40 +1109,92 @@ class _WalletScreenState extends State<WalletScreen> {
                                 setSheetState(() => isLoading = true);
 
                                 final amount = double.parse(amountCtrl.text);
+                                final uid =
+                                    AuthService.instance.currentUser?.uid ?? '';
 
-                                final success = await KashierService.instance
-                                    .topUpWallet(amount: amount);
-
-                                if (!ctx.mounted) return;
-                                Navigator.pop(ctx);
-
-                                if (success) {
-                                  // Refresh wallet data
-                                  final uid =
-                                      AuthService.instance.currentUser?.uid ??
-                                      '';
-                                  if (uid.isNotEmpty) {
-                                    _loadTransactions(uid);
-                                  }
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(
-                                      this.context,
-                                    ).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('تم شحن المحفظة بنجاح'),
-                                        backgroundColor: Color(0xFF22C55E),
-                                      ),
-                                    );
-                                  }
-                                } else {
+                                if (uid.isEmpty) {
+                                  if (ctx.mounted) Navigator.pop(ctx);
                                   if (mounted) {
                                     ScaffoldMessenger.of(
                                       this.context,
                                     ).showSnackBar(
                                       const SnackBar(
                                         content: Text(
-                                          'فشلت عملية الدفع. حاول مرة أخرى',
+                                          'تعذر تحديد المستخدم، حاول لاحقاً',
                                         ),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
+
+                                try {
+                                  // Step 1: Call backend to initiate payment session
+                                  final response = await ApiService.instance
+                                      .initiatePayment(amount: amount);
+
+                                  if (!response.containsKey('sessionId') ||
+                                      !response.containsKey('paymentUrl')) {
+                                    throw Exception(
+                                      'فشل في الحصول على معلومات الدفع',
+                                    );
+                                  }
+
+                                  final sessionId =
+                                      response['sessionId'] as String;
+                                  final paymentUrl =
+                                      response['paymentUrl'] as String;
+
+                                  if (ctx.mounted) Navigator.pop(ctx);
+
+                                  // Step 2: Launch WebView with payment session
+                                  final success = await Navigator.push<bool>(
+                                    this.context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          KashierCheckoutWebView(
+                                            checkoutUrl: paymentUrl,
+                                            sessionId: sessionId,
+                                          ),
+                                    ),
+                                  );
+
+                                  if (!mounted) return;
+
+                                  // Step 3: Refresh wallet data
+                                  _loadTransactions(uid);
+                                  _loadAll();
+
+                                  if (success == true) {
+                                    ScaffoldMessenger.of(
+                                      this.context,
+                                    ).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('تم شحن المحفظة بنجاح!'),
+                                        backgroundColor: Color(0xFF22C55E),
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(
+                                      this.context,
+                                    ).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'فشلت عملية الدفع، يرجى المحاولة مرة أخرى',
+                                        ),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(
+                                      this.context,
+                                    ).showSnackBar(
+                                      SnackBar(
+                                        content: Text('خطأ: ${e.toString()}'),
                                         backgroundColor: Colors.redAccent,
                                       ),
                                     );
@@ -918,6 +1246,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final bankCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     final uid = AuthService.instance.currentUser?.uid ?? '';
+    PaymentMethod? selectedMethod;
 
     showModalBottomSheet(
       context: context,
@@ -963,7 +1292,157 @@ class _WalletScreenState extends State<WalletScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'سيتم إرسال طلب السحب ليتم معالجته عبر بوابة الدفع كاشير',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Saved payment methods (mandatory when available)
+                StatefulBuilder(
+                  builder: (ctx2, setSheet) {
+                    final hasMethods = _paymentMethods.isNotEmpty;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (hasMethods) ...[
+                          const Text(
+                            'طريقة الاستلام *',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _paymentMethods.map((pm) {
+                              final isSel = selectedMethod?.id == pm.id;
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() => _methodError = null);
+                                  setSheet(() {
+                                    if (selectedMethod?.id == pm.id) {
+                                      selectedMethod = null;
+                                      accountCtrl.clear();
+                                      bankCtrl.clear();
+                                    } else {
+                                      selectedMethod = pm;
+                                      accountCtrl.text = pm.accountNumber ?? '';
+                                      bankCtrl.text = pm.bankName ?? '';
+                                    }
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isSel
+                                        ? const Color(0xFF7ED957)
+                                        : Colors.white10,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: isSel
+                                          ? const Color(0xFF7ED957)
+                                          : Colors.white24,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        pm.icon,
+                                        size: 16,
+                                        color: isSel
+                                            ? Colors.black
+                                            : AppColors.textSecondary,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        pm.label,
+                                        style: TextStyle(
+                                          color: isSel
+                                              ? Colors.black
+                                              : AppColors.textSecondary,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                          if (_methodError != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                _methodError!,
+                                style: const TextStyle(
+                                  color: Colors.redAccent,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 14),
+                        ] else ...[
+                          // No saved methods yet – prompt to add one
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFFF59E0B,
+                              ).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(
+                                  0xFFF59E0B,
+                                ).withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.info_outline,
+                                  color: Color(0xFFF59E0B),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: const Text(
+                                    'أضف طريقة دفع لاختيارها للسحب',
+                                    style: TextStyle(
+                                      color: Color(0xFFF59E0B),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () async {
+                                    await _showAddPaymentMethodSheet();
+                                    _loadPaymentMethods(uid);
+                                    setSheet(() {});
+                                  },
+                                  child: const Text(
+                                    'إضافة',
+                                    style: TextStyle(
+                                      color: Color(0xFF7ED957),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 // Amount
@@ -1018,15 +1497,41 @@ class _WalletScreenState extends State<WalletScreen> {
                   child: ElevatedButton(
                     onPressed: () async {
                       if (!formKey.currentState!.validate()) return;
-                      await WalletRepository.instance.submitWithdrawRequest(
-                        uid,
-                        amount: double.parse(amountCtrl.text),
-                        bankAccount: accountCtrl.text,
-                        bankName: bankCtrl.text.isNotEmpty
-                            ? bankCtrl.text
-                            : null,
-                      );
+                      if (_paymentMethods.isNotEmpty &&
+                          selectedMethod == null) {
+                        setState(
+                          () => _methodError = 'الرجاء اختيار طريقة الاستلام',
+                        );
+                        return;
+                      }
+                      String? errorMsg;
+                      try {
+                        await ApiService.instance.requestWithdraw(
+                          amount: double.parse(amountCtrl.text),
+                          bankName: selectedMethod?.label ?? bankCtrl.text,
+                          bankAccount: accountCtrl.text,
+                          accountHolder: selectedMethod?.label ?? bankCtrl.text,
+                        );
+                      } on ApiException catch (e) {
+                        errorMsg = e.message;
+                      } catch (e) {
+                        errorMsg = 'حدث خطأ غير متوقع أثناء إرسال الطلب';
+                      }
+
                       if (!ctx.mounted) return;
+
+                      if (errorMsg != null) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(errorMsg),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                        return;
+                      }
+
                       Navigator.pop(ctx);
                       _loadWithdrawRequests(uid);
                       setState(() => _currentTab = WalletTab.withdraws);
@@ -1067,8 +1572,8 @@ class _WalletScreenState extends State<WalletScreen> {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      labelStyle: const TextStyle(color: Colors.white54),
-      hintStyle: const TextStyle(color: Colors.white24),
+      labelStyle: TextStyle(color: AppColors.textSecondary),
+      hintStyle: TextStyle(color: AppColors.textMuted),
       filled: true,
       fillColor: const Color(0xFF0D131E),
       border: OutlineInputBorder(
@@ -1094,4 +1599,11 @@ class _WalletScreenState extends State<WalletScreen> {
     if (diff.inDays < 7) return 'منذ ${diff.inDays} يوم';
     return '${dt.day}/${dt.month}/${dt.year}';
   }
+}
+
+class _PmType {
+  final String type;
+  final String label;
+  final IconData icon;
+  const _PmType(this.type, this.label, this.icon);
 }
