@@ -148,40 +148,6 @@ class ApiService {
     return result;
   }
 
-  /// Send OTP to phone number
-  Future<Map<String, dynamic>> sendOtp(
-    String phoneNumber, {
-    String? firstName,
-    String? lastName,
-  }) async {
-    if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/auth/send-otp'),
-      headers: _headers(auth: false),
-      body: jsonEncode({
-        'phoneNumber': phoneNumber,
-        if (firstName != null) 'firstName': firstName,
-        if (lastName != null) 'lastName': lastName,
-      }),
-    );
-    return _handleResponse(response);
-  }
-
-  /// Verify OTP and get JWT token
-  Future<Map<String, dynamic>> verifyOtp(String phoneNumber, String otp) async {
-    if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/auth/verify-otp'),
-      headers: _headers(auth: false),
-      body: jsonEncode({'phoneNumber': phoneNumber, 'otp': otp}),
-    );
-    final result = await _handleResponse(response);
-    if (result['token'] != null) {
-      saveToken(result['token'] as String);
-    }
-    return result;
-  }
-
   /// Register / refresh the captain's FCM token on the backend.
   ///
   /// Sends a POST to `/api/v1/auth/register-fcm-token` with the body

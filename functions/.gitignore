@@ -1,0 +1,6 @@
+# Local environment / secrets — NEVER commit
+.env
+.env.local
+
+# Firebase debug logs
+firebase-debug.log
