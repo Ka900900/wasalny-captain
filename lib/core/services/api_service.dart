@@ -318,13 +318,16 @@ class ApiService {
   ///
   /// Creates a new payment session on the backend and returns the `sessionId`
   /// and `paymentUrl` for use in the in-app WebView checkout.
-  Future<Map<String, dynamic>> initiatePayment({required double amount}) async {
+  Future<Map<String, dynamic>> initiatePayment({
+    required double amount,
+    String paymentMethod = 'card',
+  }) async {
     if (!backendEnabled) return <String, dynamic>{};
     await _ensureTokenLoaded();
     final response = await http.post(
       Uri.parse('$_baseUrl/wallet/initiate-payment'),
       headers: _headers(),
-      body: jsonEncode({'amount': amount}),
+      body: jsonEncode({'amount': amount, 'paymentMethod': paymentMethod}),
     );
     return _handleResponse(response);
   }

@@ -41,7 +41,10 @@ class _KashierCheckoutWebViewState extends State<KashierCheckoutWebView> {
             return NavigationDecision.navigate;
           },
           onPageStarted: (url) => _handleUrl(url),
-          onPageFinished: (url) => _handleUrl(url),
+          onPageFinished: (url) {
+            _handleUrl(url);
+            _handlePageFinished(url);
+          },
         ),
       )
       ..loadRequest(Uri.parse(widget.checkoutUrl));
@@ -51,6 +54,9 @@ class _KashierCheckoutWebViewState extends State<KashierCheckoutWebView> {
     if (_finished) return;
 
     // Watch for the backend callback redirect.
+    // Kashier v3 redirects to the merchantRedirect URL (our /kashier-callback)
+    // carrying the sessionId; the backend then renders an HTML success/failure
+    // page. We treat reaching the callback path as the signal to close.
     if (url.contains(_callbackPath)) {
       final uri = Uri.tryParse(url);
       final status = uri?.queryParameters['status']?.toLowerCase();
@@ -64,7 +70,7 @@ class _KashierCheckoutWebViewState extends State<KashierCheckoutWebView> {
 
       _finished = true;
       // Give the backend a moment to credit the wallet before closing.
-      Future.delayed(const Duration(seconds: 2), () {
+      Future.delayed(const Duration(seconds: 3), () {
         if (mounted) Navigator.of(context).pop(isSuccess);
       });
       return;
@@ -81,6 +87,33 @@ class _KashierCheckoutWebViewState extends State<KashierCheckoutWebView> {
         if (mounted) Navigator.of(context).pop(false);
       });
     }
+  }
+
+  /// Called by the navigation delegate when a page finishes loading.
+  /// We inspect the rendered HTML to detect the backend's success/failure
+  /// page (in case the redirect URL lacks query params).
+  void _handlePageFinished(String url) {
+    if (_finished) return;
+    _controller
+        .runJavaScriptReturningResult("document.body.innerText")
+        .then((result) {
+          final text = result.toString().toLowerCase();
+          if (text.contains('تم شحن المحفظة بنجاح') ||
+              text.contains('success')) {
+            _finished = true;
+            Future.delayed(const Duration(seconds: 1), () {
+              if (mounted) Navigator.of(context).pop(true);
+            });
+          } else if (text.contains('فشل') || text.contains('خطأ')) {
+            _finished = true;
+            Future.delayed(const Duration(seconds: 1), () {
+              if (mounted) Navigator.of(context).pop(false);
+            });
+          }
+        })
+        .catchError((_) {
+          // ignore — page text not readable
+        });
   }
 
   @override
