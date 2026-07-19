@@ -1021,6 +1021,8 @@ class _WalletScreenState extends State<WalletScreen> {
     final amountCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     bool isLoading = false;
+    // طريقة الدفع المختارة: 'card' (فيزا) أو 'vodafone_cash' (محفظة)
+    String selectedMethod = 'card';
 
     showModalBottomSheet(
       context: context,
@@ -1097,6 +1099,41 @@ class _WalletScreenState extends State<WalletScreen> {
                       },
                     ),
                     const SizedBox(height: 24),
+                    // طريقة الشحن
+                    const Text(
+                      'طريقة الشحن',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _PaymentMethodChip(
+                            label: 'فيزا / بطاقة',
+                            icon: Icons.credit_card,
+                            selected: selectedMethod == 'card',
+                            onTap: () =>
+                                setSheetState(() => selectedMethod = 'card'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _PaymentMethodChip(
+                            label: 'محفظة إلكترونية',
+                            icon: Icons.account_balance_wallet,
+                            selected: selectedMethod == 'vodafone_cash',
+                            onTap: () => setSheetState(
+                              () => selectedMethod = 'vodafone_cash',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
                     // Submit
                     SizedBox(
                       width: double.infinity,
@@ -1132,7 +1169,10 @@ class _WalletScreenState extends State<WalletScreen> {
                                 try {
                                   // Step 1: Call backend to initiate payment session
                                   final response = await ApiService.instance
-                                      .initiatePayment(amount: amount);
+                                      .initiatePayment(
+                                        amount: amount,
+                                        paymentMethod: selectedMethod,
+                                      );
 
                                   if (!response.containsKey('sessionId') ||
                                       !response.containsKey('paymentUrl')) {
@@ -1152,11 +1192,10 @@ class _WalletScreenState extends State<WalletScreen> {
                                   final success = await Navigator.push<bool>(
                                     this.context,
                                     MaterialPageRoute(
-                                      builder: (_) =>
-                                          KashierCheckoutWebView(
-                                            checkoutUrl: paymentUrl,
-                                            sessionId: sessionId,
-                                          ),
+                                      builder: (_) => KashierCheckoutWebView(
+                                        checkoutUrl: paymentUrl,
+                                        sessionId: sessionId,
+                                      ),
                                     ),
                                   );
 
@@ -1606,4 +1645,59 @@ class _PmType {
   final String label;
   final IconData icon;
   const _PmType(this.type, this.label, this.icon);
+}
+
+/// Chip لاختيار طريقة الشحن (فيزا / محفظة) داخل الـ Bottom Sheet.
+class _PaymentMethodChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PaymentMethodChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withOpacity(0.15)
+              : Colors.white10,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: selected ? AppColors.primary : Colors.white70,
+              size: 28,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppColors.primary : Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

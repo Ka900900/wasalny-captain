@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:waslny_captain/core/services/api_service.dart';
@@ -56,7 +57,13 @@ class ImageUploadService {
       // بناء طلب multipart/form-data مع ترويسة Authorization Bearer.
       final request = http.MultipartRequest('POST', uri)
         ..headers['Authorization'] = 'Bearer $token'
-        ..files.add(await http.MultipartFile.fromPath('image', file.path));
+        ..files.add(
+          await http.MultipartFile.fromPath(
+            'image',
+            file.path,
+            contentType: MediaType('image', 'jpeg'),
+          ),
+        );
 
       // ── DEBUG: اطبع الرابط قبل الإرسال ──
       print(request.url);
