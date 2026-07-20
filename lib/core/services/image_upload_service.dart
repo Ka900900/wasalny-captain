@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 
-import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/document_upload_service.dart';
 
 /// أنواع الصور المدعومة للرفع.

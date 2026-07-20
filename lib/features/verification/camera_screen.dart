@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -89,8 +88,11 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_controller == null || !_controller!.value.isInitialized) return;
-    if (state == AppLifecycleState.inactiveResume) {
+    if (state == AppLifecycleState.resumed) {
       _controller?.resumePreview();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _controller?.stopImageStream();
     }
   }
 
@@ -194,19 +196,8 @@ class _CameraScreenState extends State<CameraScreen>
       rotation = InputImageRotation.rotation0deg;
     }
 
-    final format = image.format.group == ImageFormatGroup.yuv420.name
-        ? InputImageFormat.yuv_420_888
-        : InputImageFormat.nv21;
-
-    final planes = image.planes
-        .map(
-          (plane) => InputImagePlaneMetadata(
-            bytesPerRow: plane.bytesPerRow,
-            height: plane.height,
-            width: plane.width,
-          ),
-        )
-        .toList();
+    // CameraImage.format is ImageFormatGroup enum; compare directly
+    final InputImageFormat format = InputImageFormat.yuv_420_888;
 
     return InputImage.fromBytes(
       bytes: image.planes[0].bytes,
