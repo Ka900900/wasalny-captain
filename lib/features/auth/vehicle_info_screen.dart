@@ -56,7 +56,6 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   bool _isSaving = false;
 
   String _vehicleType = 'private';
-  DriverProfile? _profile;
   String? _licenseUrl;
   String? _licenseBackUrl;
   String? _idCardUrl;
@@ -216,13 +215,6 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         return _carModelsByCategory;
     }
   }
-
-  /// نسخة مسطّحة من كل الموديلات (كل الأنواع) — تُستخدم للتحقق من القيمة المحفوظة مسبقاً.
-  static final List<String> _allModels = <String>{
-    ..._carModelsByCategory.values.expand((m) => m),
-    ..._scooterModelsByCategory.values.expand((m) => m),
-    ..._motorcycleModelsByCategory.values.expand((m) => m),
-  }.toList();
 
   // ── Animation ────────────────────────────────────────
   late final AnimationController _animController;
