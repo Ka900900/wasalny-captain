@@ -7,11 +7,13 @@ class DriverProfile {
   final String? carPhotoUrl;
   final String? nationalId;
   final String? idCardUrl;
+  final String? idCardBackUrl;
   final String vehicleType;
   final String vehicleModel;
   final String vehicleColor;
   final String vehicleNumber;
   final String? licenseUrl;
+  final String? licenseBackUrl;
   final String? licenseNumber;
   final String? insuranceUrl;
   final String? criminalRecordUrl;
@@ -31,11 +33,13 @@ class DriverProfile {
     this.carPhotoUrl,
     this.nationalId,
     this.idCardUrl,
+    this.idCardBackUrl,
     required this.vehicleType,
     required this.vehicleModel,
     required this.vehicleColor,
     required this.vehicleNumber,
     this.licenseUrl,
+    this.licenseBackUrl,
     this.licenseNumber,
     this.insuranceUrl,
     this.criminalRecordUrl,
@@ -62,6 +66,7 @@ class DriverProfile {
       vehicleColor: data['vehicleColor'] as String? ?? '',
       vehicleNumber: data['vehicleNumber'] as String? ?? '',
       licenseUrl: data['licenseUrl'] as String?,
+      licenseBackUrl: data['licenseBackUrl'] as String?,
       licenseNumber: data['licenseNumber'] as String?,
       insuranceUrl: data['insuranceUrl'] as String?,
       criminalRecordUrl: data['criminalRecordUrl'] as String?,
@@ -70,6 +75,7 @@ class DriverProfile {
       isBanned: data['isBanned'] as bool? ?? false,
       banUntil: (data['banUntil'] as dynamic)?.toDate(),
       idCardUrl: data['idCardUrl'] as String?,
+      idCardBackUrl: data['idCardBackUrl'] as String?,
       rating: (data['rating'] as num?)?.toDouble(),
       createdAt: (data['createdAt'] as dynamic)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as dynamic)?.toDate() ?? DateTime.now(),
@@ -85,11 +91,13 @@ class DriverProfile {
       'carPhotoUrl': carPhotoUrl,
       'nationalId': nationalId,
       'idCardUrl': idCardUrl,
+      'idCardBackUrl': idCardBackUrl,
       'vehicleType': vehicleType,
       'vehicleModel': vehicleModel,
       'vehicleColor': vehicleColor,
       'vehicleNumber': vehicleNumber,
       'licenseUrl': licenseUrl,
+      'licenseBackUrl': licenseBackUrl,
       'licenseNumber': licenseNumber,
       'insuranceUrl': insuranceUrl,
       'criminalRecordUrl': criminalRecordUrl,
@@ -112,11 +120,13 @@ class DriverProfile {
     String? carPhotoUrl,
     String? nationalId,
     String? idCardUrl,
+    String? idCardBackUrl,
     String? vehicleType,
     String? vehicleModel,
     String? vehicleColor,
     String? vehicleNumber,
     String? licenseUrl,
+    String? licenseBackUrl,
     String? licenseNumber,
     String? insuranceUrl,
     String? criminalRecordUrl,
@@ -136,11 +146,13 @@ class DriverProfile {
       carPhotoUrl: carPhotoUrl ?? this.carPhotoUrl,
       nationalId: nationalId ?? this.nationalId,
       idCardUrl: idCardUrl ?? this.idCardUrl,
+      idCardBackUrl: idCardBackUrl ?? this.idCardBackUrl,
       vehicleType: vehicleType ?? this.vehicleType,
       vehicleModel: vehicleModel ?? this.vehicleModel,
       vehicleColor: vehicleColor ?? this.vehicleColor,
       vehicleNumber: vehicleNumber ?? this.vehicleNumber,
       licenseUrl: licenseUrl ?? this.licenseUrl,
+      licenseBackUrl: licenseBackUrl ?? this.licenseBackUrl,
       licenseNumber: licenseNumber ?? this.licenseNumber,
       insuranceUrl: insuranceUrl ?? this.insuranceUrl,
       criminalRecordUrl: criminalRecordUrl ?? this.criminalRecordUrl,

@@ -3,8 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'package:waslny_captain/core/network/api_exceptions.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
-import 'package:waslny_captain/core/repositories/driver_repository.dart';
+import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -57,32 +58,43 @@ class _LoginScreenState extends State<LoginScreen>
 
     try {
       // 1. Sign in with Google → Firebase → Backend
-      await AuthService.instance.signInWithGoogle();
+      final result = await AuthService.instance.signInWithGoogle();
 
       if (!mounted) return;
 
-      // 2. Check if driver profile exists → Registration or Home
-      final uid = AuthService.instance.currentUser?.uid;
-      if (uid != null) {
-        final existingProfile = await DriverRepository.instance.getProfile(uid);
-        if (mounted) {
-          if (existingProfile == null) {
-            // First login – go to Registration
-            Navigator.pushReplacementNamed(context, '/registration');
-          } else {
-            // Existing user – go to Home
-            Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
-          }
-        }
-      } else {
-        if (mounted) {
-          Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+      // 2. Extract Google profile data for pre‑filling
+      final displayName = result['displayName'] as String? ?? '';
+      final email = result['email'] as String? ?? '';
+      final photoUrl = result['photoUrl'] as String? ?? '';
+
+      // 3. Check if driver is registered on the backend → Onboarding or Home
+      final isRegistered = await ApiService.instance.isDriverRegistered();
+      if (mounted) {
+        if (isRegistered) {
+          // Existing user – go to Home
+          Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+        } else {
+          // First login – go to onboarding with Google data pre‑filled
+          Navigator.pushReplacementNamed(
+            context,
+            '/vehicle-info',
+            arguments: <String, dynamic>{
+              'name': displayName,
+              'email': email,
+              'photoUrl': photoUrl,
+              'phoneNumber': null,
+            },
+          );
         }
       }
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
       _showError(_mapFirebaseError(e));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError(e.message);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -249,31 +261,40 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  /// Google "G" logo widget with fallback icon.
+  static Widget _googleLogo({double size = 24}) {
+    return Image.network(
+      'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+      width: size,
+      height: size,
+      errorBuilder: (_, __, ___) =>
+          Icon(Icons.g_mobiledata, size: size + 4, color: AppColors.googleRed),
+    );
+  }
+
   Widget _buildGoogleButton() {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: AppSpacing.buttonHeightLg,
       child: ElevatedButton.icon(
         onPressed: _isLoading ? null : _signInWithGoogle,
-        icon: _isLoading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 3,
-                ),
-              )
-            : Image.network(
-                'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-                width: 24,
-                height: 24,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.g_mobiledata, size: 28),
-              ),
+        icon: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _isLoading
+              ? const SizedBox(
+                  key: ValueKey('loading'),
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: AppColors.primary,
+                  ),
+                )
+              : _googleLogo(),
+        ),
         label: Text(
-          _isLoading ? 'جارٍ تسجيل الدخول...' : 'تسجيل الدخول باستخدام Google',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          'تسجيل الدخول باستخدام Google',
+          style: AppTextStyles.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,

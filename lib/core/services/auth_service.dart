@@ -2,10 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:waslny_captain/core/network/api_exceptions.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/notification_service.dart';
+import 'package:waslny_captain/core/services/storage_service.dart';
+import 'package:waslny_captain/core/utils/logger.dart';
 
 /// Service responsible for all Firebase Authentication operations.
 ///
@@ -62,14 +66,16 @@ class AuthService {
           }
         },
         verificationFailed: (FirebaseAuthException exception) {
-          print("❌ verificationFailed");
-          print("Code: ${exception.code}");
-          print("Message: ${exception.message}");
+          logError(
+            'AuthService',
+            'verificationFailed — Code: ${exception.code}, '
+                'Message: ${exception.message}',
+            exception,
+          );
           onError(_mapFirebaseError(exception));
         },
         codeSent: (String verificationId, int? resendToken) {
-          print("✅ codeSent");
-          print("Verification ID: $verificationId");
+          logInfo('AuthService', 'codeSent — Verification ID: $verificationId');
           onCodeSent(verificationId);
         },
         codeAutoRetrievalTimeout: (String verificationId) {
@@ -159,57 +165,144 @@ class AuthService {
   ///
   /// Returns the backend response map (contains the app JWT).
   /// Throws on any failure.
+  ///
+  /// **Web note:** On web, `GoogleSignIn.signIn()` is deprecated and does not
+  /// reliably return an `idToken` (see `google_sign_in_web` v0.12.4+4).
+  /// Instead, we use `FirebaseAuth.signInWithPopup()` which correctly uses the
+  /// Google Identity Services (GIS) library and returns the idToken.
   Future<Map<String, dynamic>> signInWithGoogle() async {
     try {
-      // 1. Trigger Google Sign-In flow
-      final GoogleSignIn googleSignIn = GoogleSignIn();
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-      if (googleUser == null) {
-        throw FirebaseAuthException(
-          code: 'cancelled',
-          message: 'تم إلغاء تسجيل الدخول بواسطة جوجل.',
+      String idToken;
+      String displayName;
+      String email;
+      String photoUrl;
+      String uid;
+
+      if (kIsWeb) {
+        // ==========================================
+        // WEB: Use Firebase Auth signInWithPopup
+        // (GoogleSignIn.signIn() is deprecated on web
+        //  and can't reliably provide an idToken)
+        // ==========================================
+        final GoogleAuthProvider provider = GoogleAuthProvider();
+        final UserCredential result = await _auth.signInWithPopup(provider);
+        final User? user = result.user;
+        if (user == null) {
+          throw FirebaseAuthException(
+            code: 'user-null',
+            message: 'لم يتم إنشاء حساب Firebase بعد التحقق من جوجل.',
+          );
+        }
+
+        final firebaseToken1 = await user.getIdToken(true);
+        if (firebaseToken1 == null || firebaseToken1.isEmpty) {
+          throw FirebaseAuthException(
+            code: 'no-id-token',
+            message: 'فشل في الحصول على معرف Google ID Token.',
+          );
+        }
+        idToken = firebaseToken1;
+
+        displayName = user.displayName ?? '';
+        email = user.email ?? '';
+        photoUrl = user.photoURL ?? '';
+        uid = user.uid;
+      } else {
+        // ==========================================
+        // MOBILE (Android/iOS): Use GoogleSignIn
+        // ==========================================
+        final GoogleSignIn googleSignIn = GoogleSignIn();
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        if (googleUser == null) {
+          throw FirebaseAuthException(
+            code: 'cancelled',
+            message: 'تم إلغاء تسجيل الدخول بواسطة جوجل.',
+          );
+        }
+
+        // 2. Obtain Google authentication details
+        final GoogleSignInAuthentication googleAuth =
+            await googleUser.authentication;
+
+        // ── DEBUG: طباعة قيم التوكنز لفحص المشكلة ──
+        logInfo(
+          'AuthService',
+          '[DEBUG WEB] googleAuth.idToken = ${googleAuth.idToken}',
         );
+        logInfo(
+          'AuthService',
+          '[DEBUG WEB] googleAuth.accessToken = ${googleAuth.accessToken}',
+        );
+        logInfo(
+          'AuthService',
+          '[DEBUG WEB] googleAuth.idToken is null? ${googleAuth.idToken == null}',
+        );
+        // ──────────────────────────────────────────
+
+        if (googleAuth.idToken == null) {
+          throw FirebaseAuthException(
+            code: 'no-id-token',
+            message: 'فشل في الحصول على معرف Google ID Token.',
+          );
+        }
+
+        // 3. Create Firebase credential and sign in
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+        final UserCredential result = await _auth.signInWithCredential(
+          credential,
+        );
+        final User? user = result.user;
+        if (user == null) {
+          throw FirebaseAuthException(
+            code: 'user-null',
+            message: 'لم يتم إنشاء حساب Firebase بعد التحقق من جوجل.',
+          );
+        }
+
+        // 4. Get the Firebase ID Token
+        final firebaseToken2 = await user.getIdToken(true);
+        if (firebaseToken2 == null || firebaseToken2.isEmpty) {
+          throw FirebaseAuthException(
+            code: 'token-error',
+            message: 'فشل في استخراج Firebase ID Token.',
+          );
+        }
+        idToken = firebaseToken2;
+
+        // 5. Extract Google profile data
+        displayName = user.displayName ?? '';
+        email = user.email ?? '';
+        photoUrl = user.photoURL ?? '';
+        uid = user.uid;
       }
 
-      // 2. Obtain Google authentication details
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      if (googleAuth.idToken == null) {
-        throw FirebaseAuthException(
-          code: 'no-id-token',
-          message: 'فشل في الحصول على معرف Google ID Token.',
-        );
-      }
-
-      // 3. Create Firebase credential and sign in
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      // ==========================================
+      // Exchange Firebase Token → Backend JWT
+      // ==========================================
+      final jwt = await loginWithBackend(
+        idToken,
+        name: displayName,
+        email: email,
+        photoUrl: photoUrl,
       );
-      final result = await _auth.signInWithCredential(credential);
-      final user = result.user;
-      if (user == null) {
-        throw FirebaseAuthException(
-          code: 'user-null',
-          message: 'لم يتم إنشاء حساب Firebase بعد التحقق من جوجل.',
-        );
-      }
 
-      // 4. Get the Firebase ID Token
-      final firebaseToken = await user.getIdToken(true);
-      if (firebaseToken == null || firebaseToken.isEmpty) {
-        throw FirebaseAuthException(
-          code: 'token-error',
-          message: 'فشل في استخراج Firebase ID Token.',
-        );
-      }
-
-      // 5. Exchange Firebase Token → Backend JWT
-      final jwt = await loginWithBackend(firebaseToken);
+      // Persist Google profile data locally
+      await StorageService.saveUser({
+        'displayName': displayName,
+        'email': email,
+        'photoUrl': photoUrl,
+        'uid': uid,
+      });
 
       return {
         'token': jwt,
-        'firebaseToken': firebaseToken,
+        'firebaseToken': idToken,
+        'displayName': displayName,
+        'email': email,
+        'photoUrl': photoUrl,
         'message': 'تم تسجيل الدخول بنجاح',
       };
     } on FirebaseAuthException {
@@ -247,7 +340,16 @@ class AuthService {
 
   /// Exchanges the Firebase ID Token with the Node.js backend and returns the
   /// app JWT used by the backend APIs.
-  Future<String> loginWithBackend(String firebaseToken) async {
+  ///
+  /// Optionally accepts Google profile data (`name`, `email`, `photoUrl`) that
+  /// will be forwarded to the backend so the `User` record stays in sync with
+  /// the Google account (name, email, profile photo).
+  Future<String> loginWithBackend(
+    String firebaseToken, {
+    String? name,
+    String? email,
+    String? photoUrl,
+  }) async {
     // Backend disabled → run on Firebase only (no custom JWT exchange).
     if (!ApiService.backendEnabled) return '';
     try {
@@ -257,14 +359,22 @@ class AuthService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({'firebaseIdToken': firebaseToken}),
+        body: jsonEncode({
+          'firebaseIdToken': firebaseToken,
+          if (name != null && name.isNotEmpty) 'name': name,
+          if (email != null && email.isNotEmpty) 'email': email,
+          if (photoUrl != null && photoUrl.isNotEmpty) 'photoUrl': photoUrl,
+        }),
       );
 
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode < 200 || response.statusCode >= 300) {
         // DEBUG: اطبع رسالة الخطأ الكاملة من السيرفر قبل الرمي
-        print('[loginWithBackend] body[error] = ${body['error']}');
-        print('[loginWithBackend] full body = $body');
+        logWarning(
+          'AuthService',
+          '[loginWithBackend] body[error] = ${body['error']}',
+        );
+        logWarning('AuthService', '[loginWithBackend] full body = $body');
         throw ApiException(
           message: body['error'] as String? ?? 'فشل تسجيل الدخول مع الخادم',
           statusCode: response.statusCode,
@@ -280,8 +390,7 @@ class AuthService {
       }
 
       ApiService.instance.saveToken(jwt);
-      // TODO(temp-debug): remove after grabbing the JWT for manual endpoint testing
-      print('=== JWT TOKEN: ${ApiService.instance.getToken()} ===');
+      // Debug: تم أخذ JWT بنجاح في 23 يوليو 2026
 
       // Register the FCM token with the backend so the server can send this
       // captain real ride-alert push notifications. Fire-and-forget: failures

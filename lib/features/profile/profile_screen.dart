@@ -7,6 +7,7 @@ import 'package:waslny_captain/widgets/image_source_picker.dart';
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
 import 'package:waslny_captain/core/repositories/driver_repository.dart';
+import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/image_upload_service.dart';
 import 'package:waslny_captain/features/auth/vehicle_info_screen.dart';
@@ -94,10 +95,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
-      // تحديث حقل photoUrl فقط في Firestore (merge — دون مسح باقي الحقول)
+      // تحديث حقول photoUrl + profilePic في Firestore (merge — دون مسح باقي الحقول)
+      // نحتاج نحدّث `profilePic` عشان CaptainModel (اللي بيستخدمه Stream تاني)
+      // يشوف الصورة الجديدة فورًا من غير ما يفضل عالق على الصورة القديمة من Google.
       await DriverRepository.instance.updateProfile(
         uid: uid,
-        updates: {'photoUrl': imageUrl},
+        updates: {'photoUrl': imageUrl, 'profilePic': imageUrl},
       );
 
       if (mounted) {
@@ -281,10 +284,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
-          child: StreamBuilder<DriverProfile?>(
-            stream: DriverRepository.instance.streamProfile(uid),
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: ApiService.instance.getProfile(),
             builder: (context, snapshot) {
-              // Handle stream errors gracefully
+              // Handle errors gracefully
               if (snapshot.hasError) {
                 return Center(
                   child: Padding(
@@ -321,7 +324,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 );
               }
 
-              final profile = snapshot.data;
+              // Parse captain data from backend response into DriverProfile
+              final captainData =
+                  snapshot.data?['captain'] as Map<String, dynamic>?;
+              final DriverProfile? profile = captainData != null
+                  ? DriverProfile(
+                      uid: captainData['firebaseUid'] as String? ?? uid,
+                      name: captainData['name'] as String? ?? '',
+                      phone: captainData['phone'] as String? ?? '',
+                      photoUrl: captainData['photoUrl'] as String?,
+                      carPhotoUrl: captainData['carPhotoUrl'] as String?,
+                      nationalId: null,
+                      idCardUrl: captainData['idCardUrl'] as String?,
+                      idCardBackUrl: captainData['idCardBackUrl'] as String?,
+                      vehicleType: captainData['vehicleType'] as String? ?? '',
+                      vehicleModel:
+                          captainData['vehicleModel'] as String? ?? '',
+                      vehicleColor:
+                          captainData['vehicleColor'] as String? ?? '',
+                      vehicleNumber:
+                          captainData['vehicleNumber'] as String? ?? '',
+                      licenseUrl: captainData['licenseUrl'] as String?,
+                      licenseBackUrl: captainData['licenseBackUrl'] as String?,
+                      licenseNumber: captainData['licenseNumber'] as String?,
+                      insuranceUrl: captainData['insuranceUrl'] as String?,
+                      criminalRecordUrl:
+                          captainData['criminalRecordUrl'] as String?,
+                      drugTestUrl: captainData['drugTestUrl'] as String?,
+                      documentsGraceEndsAt: null,
+                      isBanned: false,
+                      banUntil: null,
+                      rating: (captainData['rating'] as num?)?.toDouble(),
+                      createdAt: captainData['createdAt'] != null
+                          ? DateTime.parse(captainData['createdAt'] as String)
+                          : DateTime.now(),
+                      updatedAt: captainData['updatedAt'] != null
+                          ? DateTime.parse(captainData['updatedAt'] as String)
+                          : DateTime.now(),
+                    )
+                  : null;
               final bool loading =
                   snapshot.connectionState == ConnectionState.waiting;
 
@@ -568,7 +609,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             captain?.phone ??
             profile?.phone ??
             AuthService.instance.currentPhoneNumber;
-        final String? photoUrl = captain?.profilePic ?? profile?.photoUrl;
+        // تُعطى الأولوية للصورة المرفوعة يدويًا (photoUrl) على صورة Google (profilePic).
+        // لو المستخدم رفع صورة، `profile.photoUrl` بتكون أحدث من `captain.profilePic`.
+        final String? photoUrl = profile?.photoUrl ?? captain?.profilePic;
         final double rating = profile?.rating ?? 0.0;
 
         return GestureDetector(

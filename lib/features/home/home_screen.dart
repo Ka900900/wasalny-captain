@@ -5,10 +5,10 @@ import 'package:flutter_osm_plugin/flutter_osm_plugin.dart' as osm;
 import 'package:geolocator/geolocator.dart';
 
 import 'package:waslny_captain/core/design_system/design_system.dart';
+import 'package:waslny_captain/core/network/api_exceptions.dart';
 import 'package:waslny_captain/core/services/database_service.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
 import 'package:waslny_captain/core/models/ride_model.dart';
-import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/sound_service.dart';
@@ -26,6 +26,7 @@ import 'widgets/home_map_widget.dart';
 import 'widgets/ride_request_card.dart';
 import 'widgets/trip_status_card.dart';
 import 'widgets/online_waiting_card.dart';
+import 'widgets/online_toggle_button.dart';
 
 /// Main captain home screen with Material 3 bottom navigation.
 ///
@@ -65,9 +66,17 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   // ── Ride-alert sound toggle (used by the waiting card) ──
   bool _soundEnabled = true;
 
-  // ── Profile stream (document compliance / ban status) ──
+  // ── Profile from backend API (document compliance / ban status) ──
   DriverProfile? _profile;
-  StreamSubscription<DriverProfile?>? _profileSub;
+
+  // ── Toggle loading state ───────────────────────────
+  bool _isToggling = false;
+
+  // ── Stats header data ──────────────────────────────
+  double _earningsToday = 0;
+  int _tripsToday = 0;
+  double _rating = 0;
+  // int _totalRatings = 0;
 
   // ──────────────────────────────────────────────────────
   // Lifecycle
@@ -81,17 +90,8 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       initPosition: osm.GeoPoint(latitude: 30.0444, longitude: 31.2357),
     );
 
-    final uid = AuthService.instance.currentUser?.uid;
-    if (uid != null) {
-      _profileSub = DriverRepository.instance.streamProfile(uid).listen((p) {
-        if (!mounted) return;
-        setState(() => _profile = p);
-        // إذا حُظر الكابتن أثناء الاتصال، أُخرجه للوضع غير المتصل فوراً
-        if (p?.isBanned == true && _isOnline) {
-          _forceOfflineForBan();
-        }
-      });
-    }
+    // جلب البروفايل من الباك إند بدلاً من Firestore
+    _fetchProfile();
 
     // ── استقبال طلبات الرحلات عبر السوكيت (بديل آمن عن مستمع Firestore العام) ──
     // حدث لحظي من الباك إند للكابتن المخصّص فقط → اعرض الكارت + شغّل صوت التنبيه.
@@ -140,13 +140,15 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     };
 
     // لا يوجد مستمع لرحلات معلّقة عبر Firestore بعد الآن (استُبدل بالسوكيت).
+
+    // جلب إحصائيات اليوم وعرضها في الـ Header
+    _fetchStats();
   }
 
   @override
   void dispose() {
     _locationTimer?.cancel();
     _locationTimer = null;
-    _profileSub?.cancel();
     RealtimeService.instance.stopRideListener();
     RealtimeService.instance.stopRideStatusListener();
     SocketService().disconnect();
@@ -207,6 +209,94 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
 
       if (mounted) setState(() => _locationGranted = true);
     } catch (_) {}
+  }
+
+  // ──────────────────────────────────────────────────────
+  // Fetch stats for header bar
+  // ──────────────────────────────────────────────────────
+
+  Future<void> _fetchStats() async {
+    try {
+      // Today's earnings
+      if (ApiService.backendEnabled) {
+        final earnings = await ApiService.instance.getEarnings(period: 'daily');
+        if (mounted) {
+          setState(() {
+            _earningsToday =
+                ((earnings['totalAmount'] ?? earnings['amount'] ?? 0) as num)
+                    .toDouble();
+            _tripsToday =
+                ((earnings['totalTrips'] ?? earnings['trips'] ?? 0) as num)
+                    .toInt();
+          });
+        }
+      }
+      // Driver rating
+      if (ApiService.backendEnabled) {
+        final ratings = await ApiService.instance.getDriverRatings();
+        if (mounted) {
+          setState(() {
+            _rating =
+                ((ratings['averageRating'] ?? ratings['rating'] ?? 0) as num)
+                    .toDouble();
+            /*_totalRatings =
+                ((ratings['totalRatings'] ?? ratings['count'] ?? 0) as num)
+                    .toInt();*/
+          });
+        }
+      }
+    } on ApiException catch (e) {
+      debugPrint('HomeScreen._fetchStats error: $e');
+    } catch (e) {
+      debugPrint('HomeScreen._fetchStats error: $e');
+    }
+  }
+
+  /// Fetch captain profile from the backend API (replaces old Firestore stream).
+  Future<void> _fetchProfile() async {
+    try {
+      final result = await ApiService.instance.getProfile();
+      if (!mounted) return;
+      final captainData = result['captain'] as Map<String, dynamic>?;
+      if (captainData == null) return;
+      final uid = AuthService.instance.currentUser?.uid ?? '';
+      final profile = DriverProfile(
+        uid: captainData['firebaseUid'] as String? ?? uid,
+        name: captainData['name'] as String? ?? '',
+        phone: captainData['phone'] as String? ?? '',
+        photoUrl: captainData['photoUrl'] as String?,
+        carPhotoUrl: captainData['carPhotoUrl'] as String?,
+        nationalId: null,
+        idCardUrl: captainData['idCardUrl'] as String?,
+        idCardBackUrl: captainData['idCardBackUrl'] as String?,
+        vehicleType: captainData['vehicleType'] as String? ?? '',
+        vehicleModel: captainData['vehicleModel'] as String? ?? '',
+        vehicleColor: captainData['vehicleColor'] as String? ?? '',
+        vehicleNumber: captainData['vehicleNumber'] as String? ?? '',
+        licenseUrl: captainData['licenseUrl'] as String?,
+        licenseBackUrl: captainData['licenseBackUrl'] as String?,
+        licenseNumber: captainData['licenseNumber'] as String?,
+        insuranceUrl: captainData['insuranceUrl'] as String?,
+        criminalRecordUrl: captainData['criminalRecordUrl'] as String?,
+        drugTestUrl: captainData['drugTestUrl'] as String?,
+        documentsGraceEndsAt: null,
+        isBanned: false,
+        banUntil: null,
+        rating: (captainData['rating'] as num?)?.toDouble(),
+        createdAt: captainData['createdAt'] != null
+            ? DateTime.parse(captainData['createdAt'] as String)
+            : DateTime.now(),
+        updatedAt: captainData['updatedAt'] != null
+            ? DateTime.parse(captainData['updatedAt'] as String)
+            : DateTime.now(),
+      );
+      setState(() => _profile = profile);
+      if (profile.isBanned && _isOnline) {
+        _forceOfflineForBan();
+      }
+    } catch (_) {
+      // Profile fetch failed silently; _profile stays null.
+    }
   }
 
   // ──────────────────────────────────────────────────────
@@ -421,7 +511,6 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
 
   Future<void> _toggleOnlineStatus() async {
     final newValue = !_isOnline;
-    final previousValue = _isOnline;
 
     // Guard: cannot go offline during an active trip
     if (!newValue && _activeTripId != null) {
@@ -450,9 +539,13 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       if (!_locationGranted) return;
     }
 
+    // Show loading state inside the toggle button
+    setState(() => _isToggling = true);
+
     // 1. مزامنة الحالة مع الباك إند أولاً (قبل أي تغيير محلي)
     final backendOk = await ApiService.instance.toggleAvailability(newValue);
     if (!backendOk) {
+      setState(() => _isToggling = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -465,61 +558,32 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     }
 
     // 2. نجحت المزامنة → حدّث الواجهة محلياً
-    setState(() => _isOnline = newValue);
+    setState(() {
+      _isOnline = newValue;
+      _isToggling = false;
+    });
 
-    try {
-      // Get current position to send with status
-      Position? pos;
-      try {
-        pos = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-          ),
-        );
-      } catch (_) {}
-
-      await _dbService.updateCaptainStatus(
-        online: newValue,
-        latitude: pos?.latitude,
-        longitude: pos?.longitude,
-      );
-
-      // Start/stop periodic location uploads
-      if (newValue) {
-        _startLocationUpdates();
-        // تهيئة اتصال السوكيت لبث الموقع والبيانات الحية
-        final uid = AuthService.instance.currentUser?.uid;
-        // أعد تحميل التوكن من التخزين المحلي تحسباً لكونه فارغاً في الذاكرة
-        // (مثلاً بعد إعادة تشغيل التطبيق) قبل تمريره للسوكيت.
-        await ApiService.instance.loadToken();
-        final token = ApiService.instance.getToken();
-        if (uid != null && token != null) {
-          SocketService().initSocket(uid, token);
-        }
-      } else {
-        _stopLocationUpdates();
-        // قطع اتصال السوكيت عند تحويل الكابتن إلى Offline
-        SocketService().disconnect();
-        // أوقف الاستماع لأي رحلة نشطة وأزل الطلب/الرحلة المعروضة
-        RealtimeService.instance.stopRideStatusListener();
-        _activeTripId = null;
-        if (_currentRideRequest != null) {
-          setState(() => _currentRideRequest = null);
-        }
+    // Start/stop periodic location uploads
+    if (newValue) {
+      _startLocationUpdates();
+      // تهيئة اتصال السوكيت لبث الموقع والبيانات الحية
+      final uid = AuthService.instance.currentUser?.uid;
+      // أعد تحميل التوكن من التخزين المحلي تحسباً لكونه فارغاً في الذاكرة
+      // (مثلاً بعد إعادة تشغيل التطبيق) قبل تمريره للسوكيت.
+      await ApiService.instance.loadToken();
+      final token = ApiService.instance.getToken();
+      if (uid != null && token != null) {
+        SocketService().initSocket(uid, token);
       }
-    } catch (e) {
-      debugPrint('updateCaptainStatus error: $e');
-
-      // Rollback UI to previous state on failure
-      setState(() => _isOnline = previousValue);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر تحديث حالة التواجد، حاول مرة أخرى'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+    } else {
+      _stopLocationUpdates();
+      // قطع اتصال السوكيت عند تحويل الكابتن إلى Offline
+      SocketService().disconnect();
+      // أوقف الاستماع لأي رحلة نشطة وأزل الطلب/الرحلة المعروضة
+      RealtimeService.instance.stopRideStatusListener();
+      _activeTripId = null;
+      if (_currentRideRequest != null) {
+        setState(() => _currentRideRequest = null);
       }
     }
   }
@@ -677,7 +741,6 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         if (!_isOnline) _buildOfflineScrim(),
 
         // ── 2b. Bottom Online/Offline control (single source of truth) ──
-        // Large, clear button anchored to the bottom of the screen.
         // Shown only when no ride-request / trip card is occupying the
         // bottom area, so the two never overlap.
         if (_currentRideRequest == null)
@@ -685,7 +748,12 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
             left: 16,
             right: 16,
             bottom: 96,
-            child: _buildOnlineToggleButton(),
+            child: OnlineToggleButton(
+              isOnline: _isOnline,
+              hasActiveTrip: _activeTripId != null,
+              isLoading: _isToggling,
+              onToggle: (newValue) => _toggleOnlineStatus(),
+            ),
           ),
 
         // ── 3. Floating top action: notifications ──
@@ -715,7 +783,11 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           child: _buildComplianceBanner(),
         ),
 
-        // ── 3b. Empty / Waiting state (online, no active ride) ──
+        // ── 3b. Stats header bar (earnings, trips, rating) ──
+        if (_isOnline)
+          Positioned(top: 160, left: 16, right: 16, child: _buildStatsBar()),
+
+        // ── 3c. Empty / Waiting state (online, no active ride) ──
         if (_isOnline && _currentRideRequest == null)
           Positioned(
             left: 16,
@@ -803,115 +875,83 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     );
   }
 
-  /// مفتاح الاتصال/عدم الاتصال (Online/Offline) — تصميم بريميوم عصري.
-  Widget _buildOnlineToggleButton() {
-    final isOnline = _isOnline;
-    // ألوان الحالة: أخضر زمردي نابض للاتصال، رمادي سليت أنيق لعدم الاتصال.
-    final bgColor = isOnline
-        ? const Color(0xFF10B981)
-        : const Color(0xFF334155);
-    final bgColorDark = isOnline
-        ? const Color(0xFF059669)
-        : const Color(0xFF1E293B);
-    final fgColor = Colors.white;
-    final dotColor = isOnline
-        ? const Color(0xFF6EE7B7)
-        : const Color(0xFF94A3B8);
+  // ── Stats header bar ────────────────────────────────
 
-    return Semantics(
-      label: isOnline ? 'إيقاف الاتصال' : 'تشغيل الاتصال',
-      child: GestureDetector(
-        onTap: _toggleOnlineStatus,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeInOut,
-          width: double.infinity,
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [bgColor, bgColorDark],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: (isOnline ? const Color(0xFF10B981) : Colors.black)
-                    .withValues(alpha: isOnline ? 0.35 : 0.30),
-                blurRadius: 22,
-                offset: const Offset(0, 10),
-              ),
-            ],
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.12),
-              width: 1,
-            ),
+  Widget _buildStatsBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
           ),
-          child: Row(
-            children: [
-              // نقطة حالة نابضة
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: dotColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: dotColor.withValues(alpha: 0.6),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        isOnline ? 'متصل الآن' : 'غير متصل',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.button?.copyWith(
-                          color: fgColor,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Flexible(
-                      child: Text(
-                        isOnline
-                            ? 'اضغط للانتقال للوضع غير المتصل'
-                            : 'اضغط للاتصال واستقبال الرحلات',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.labelSmall?.copyWith(
-                          color: fgColor.withValues(alpha: 0.75),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                color: fgColor,
-                size: 26,
-              ),
-            ],
+        ],
+      ),
+      child: Row(
+        children: [
+          _statItem(
+            icon: Icons.account_balance_wallet_outlined,
+            label: 'وارد اليوم',
+            value: '${_earningsToday.toStringAsFixed(0)} ر.س',
+            color: AppColors.success,
           ),
-        ),
+          _divider(),
+          _statItem(
+            icon: Icons.route_outlined,
+            label: 'رحلات اليوم',
+            value: '$_tripsToday',
+            color: AppColors.primary,
+          ),
+          _divider(),
+          _statItem(
+            icon: Icons.star_outline,
+            label: 'التقييم',
+            value: _rating > 0 ? _rating.toStringAsFixed(1) : '--',
+            color: AppColors.warning,
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _statItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTextStyles.labelLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: AppTextStyles.labelSmall?.copyWith(
+              color: AppColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider() {
+    return Container(width: 1, height: 36, color: AppColors.border);
   }
 
   /// Light bottom-only overlay to preserve a clear map view.

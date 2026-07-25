@@ -9,6 +9,7 @@ import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/sound_service.dart';
 import 'package:waslny_captain/core/repositories/notification_repository.dart';
 import 'package:waslny_captain/core/models/notification_models.dart';
+import 'package:waslny_captain/core/utils/logger.dart';
 
 /// Android notification channel used for incoming ride alerts.
 const String _rideChannelId = 'ride_alerts';
@@ -21,8 +22,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // background isolate.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ignore: avoid_print
-  print(
+  logInfo(
+    'NotificationService',
     '[FCM Background] ${message.messageId} — ${message.notification?.title}',
   );
 
@@ -79,8 +80,7 @@ Future<void> _showLocalNotificationFromMessage(RemoteMessage message) async {
       payload: data['type'] as String? ?? 'promotion',
     );
   } catch (e) {
-    // ignore: avoid_print
-    print('[NotificationService] showLocalNotification failed: $e');
+    logError('NotificationService', 'showLocalNotification failed: $e', e);
   }
 }
 
@@ -121,15 +121,17 @@ class NotificationService {
     try {
       await _requestPermissions().timeout(const Duration(seconds: 6));
     } catch (e) {
-      // ignore: avoid_print
-      print('[NotificationService] requestPermission failed/timed out: $e');
+      logError(
+        'NotificationService',
+        'requestPermission failed/timed out: $e',
+        e,
+      );
     }
 
     try {
       await _refreshToken().timeout(const Duration(seconds: 6));
     } catch (e) {
-      // ignore: avoid_print
-      print('[NotificationService] getToken failed/timed out: $e');
+      logError('NotificationService', 'getToken failed/timed out: $e', e);
     }
 
     _tokenSub = _messaging!.onTokenRefresh.listen(_onTokenRefresh);
@@ -264,8 +266,7 @@ class NotificationService {
       try {
         token = await _messaging?.getToken();
       } catch (e) {
-        // ignore: avoid_print
-        print('[NotificationService] getToken failed: $e');
+        logError('NotificationService', 'getToken failed: $e', e);
       }
       if (token == null || token.isEmpty) return;
       _deviceToken = token;
@@ -276,8 +277,7 @@ class NotificationService {
           .updateFcmTokenToServer(token)
           .timeout(const Duration(seconds: 8));
     } catch (e) {
-      // ignore: avoid_print
-      print('[NotificationService] registerTokenWithBackend failed: $e');
+      logError('NotificationService', 'registerTokenWithBackend failed: $e', e);
     }
   }
 
@@ -289,9 +289,10 @@ class NotificationService {
           .saveToken(uid)
           .timeout(const Duration(seconds: 6));
     } catch (e) {
-      // ignore: avoid_print
-      print(
-        '[NotificationService] saveToken to Firestore failed/timed out: $e',
+      logError(
+        'NotificationService',
+        'saveToken to Firestore failed/timed out: $e',
+        e,
       );
     }
   }

@@ -31,21 +31,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _nationalIdCtrl;
-  late final TextEditingController _licenseNumberCtrl;
 
   // ── Image URLs (either existing or freshly uploaded) ────
   String? _photoUrl;
-  String? _licenseUrl;
-  String? _idCardUrl;
-  String? _criminalRecordUrl;
-  String? _drugTestUrl;
 
   // ── Locally picked image bytes for preview before upload ─
   File? _pickedPhoto;
-  File? _pickedLicense;
-  File? _pickedIdCard;
-  File? _pickedCriminalRecord;
-  File? _pickedDrugTest;
 
   bool _isSaving = false;
   bool _isUploading = false;
@@ -63,12 +54,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       text: p?.phone ?? AuthService.instance.currentPhoneNumber,
     );
     _nationalIdCtrl = TextEditingController(text: p?.nationalId ?? '');
-    _licenseNumberCtrl = TextEditingController(text: p?.licenseNumber ?? '');
     _photoUrl = p?.photoUrl;
-    _licenseUrl = p?.licenseUrl;
-    _idCardUrl = p?.idCardUrl;
-    _criminalRecordUrl = p?.criminalRecordUrl;
-    _drugTestUrl = p?.drugTestUrl;
   }
 
   @override
@@ -76,7 +62,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _nationalIdCtrl.dispose();
-    _licenseNumberCtrl.dispose();
     super.dispose();
   }
 
@@ -151,62 +136,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setLocal: (url) => _photoUrl = url,
       label: 'الصورة الشخصية',
     );
-  }
 
-  Future<void> _pickLicense() async {
-    final picked = await pickImageWithSourceSheet(context);
-    if (picked == null) return;
-    final file = File(picked.path);
-    setState(() => _pickedLicense = file);
-    await _uploadAndSetField(
-      file: file,
-      type: UploadType.license,
-      firestoreField: 'licenseUrl',
-      setLocal: (url) => _licenseUrl = url,
-      label: 'صورة الرخصة',
-    );
-  }
-
-  Future<void> _pickIdCard() async {
-    final picked = await pickImageWithSourceSheet(context);
-    if (picked == null) return;
-    final file = File(picked.path);
-    setState(() => _pickedIdCard = file);
-    await _uploadAndSetField(
-      file: file,
-      type: UploadType.idCard,
-      firestoreField: 'idCardUrl',
-      setLocal: (url) => _idCardUrl = url,
-      label: 'صورة الهوية',
-    );
-  }
-
-  Future<void> _pickCriminalRecord() async {
-    final picked = await pickImageWithSourceSheet(context);
-    if (picked == null) return;
-    final file = File(picked.path);
-    setState(() => _pickedCriminalRecord = file);
-    await _uploadAndSetField(
-      file: file,
-      type: UploadType.idCard,
-      firestoreField: 'criminalRecordUrl',
-      setLocal: (url) => _criminalRecordUrl = url,
-      label: 'الفيش الجنائى',
-    );
-  }
-
-  Future<void> _pickDrugTest() async {
-    final picked = await pickImageWithSourceSheet(context);
-    if (picked == null) return;
-    final file = File(picked.path);
-    setState(() => _pickedDrugTest = file);
-    await _uploadAndSetField(
-      file: file,
-      type: UploadType.insurance,
-      firestoreField: 'drugTestUrl',
-      setLocal: (url) => _drugTestUrl = url,
-      label: 'تحليل المخدرات',
-    );
+    // بعد رفع الصورة، نحدّث `profilePic` عشان CaptainModel يشوف التغيير
+    if (_photoUrl != null && _photoUrl!.isNotEmpty) {
+      final uid = AuthService.instance.currentUser?.uid;
+      if (uid != null) {
+        await DriverRepository.instance.updateProfile(
+          uid: uid,
+          updates: {'profilePic': _photoUrl},
+        );
+      }
+    }
   }
 
   /// Builds a clickable image tile (existing URL or local file).
@@ -281,52 +221,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  // ── Documents compliance note ────────────────────
-  Widget _buildDocumentsNote() {
-    final profile = widget.profile;
-    if (profile == null) return const SizedBox.shrink();
-    final now = DateTime.now();
-    final status = profile.compliance(now);
-    if (status == DocumentCompliance.submitted) {
-      return _noteChip('تم رفع المستندات المطلوبة ✓', AppColors.success);
-    }
-    if (status == DocumentCompliance.banned) {
-      final until = profile.banUntil;
-      final extra = until != null ? ' (حتى ${_fmtDate(until)})' : '';
-      return _noteChip(
-        'تم حظرك لعدم رفع المستندات المطلوبة$extra',
-        AppColors.error,
-      );
-    }
-    final daysLeft = profile.daysLeftInGrace(now);
-    return _noteChip(
-      'متبقٍ $daysLeft يوم لرفع المستندات قبل الحظر',
-      AppColors.warning,
-    );
-  }
-
-  Widget _noteChip(String text, Color color) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        text,
-        style: AppTextStyles.bodySmall?.copyWith(color: color),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-
-  String _fmtDate(DateTime d) =>
-      '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
   // ────────────────────────────────────────────────────────
   // Save
   // ────────────────────────────────────────────────────────
@@ -363,15 +257,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         phone: _phoneCtrl.text.trim(),
         photoUrl: _photoUrl,
         nationalId: _nationalIdCtrl.text.trim(),
-        licenseNumber: _licenseNumberCtrl.text.trim(),
         vehicleType: widget.profile?.vehicleType ?? '',
         vehicleModel: widget.profile?.vehicleModel ?? '',
         vehicleColor: widget.profile?.vehicleColor ?? '',
         vehicleNumber: widget.profile?.vehicleNumber ?? '',
-        licenseUrl: _licenseUrl,
-        idCardUrl: _idCardUrl,
-        criminalRecordUrl: _criminalRecordUrl,
-        drugTestUrl: _drugTestUrl,
         documentsGraceEndsAt: widget.profile?.documentsGraceEndsAt,
         createdAt: widget.profile?.createdAt ?? now,
         updatedAt: now,
@@ -448,59 +337,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           uploading: _isUploading,
                         ),
                       ),
-                      Center(
-                        child: _imageTile(
-                          label: 'صورة البطاقة الشخصية',
-                          imageUrl: _idCardUrl,
-                          localFile: _pickedIdCard,
-                          onPick: _pickIdCard,
-                          uploading: _isUploading,
-                        ),
-                      ),
-                      Center(
-                        child: _imageTile(
-                          label: 'صورة رخصة القيادة',
-                          imageUrl: _licenseUrl,
-                          localFile: _pickedLicense,
-                          onPick: _pickLicense,
-                          uploading: _isUploading,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xxl),
-
-                  // ── Required official documents ─────────
-                  _label('المستندات الرسمية المطلوبة'),
-                  const SizedBox(height: AppSpacing.sm),
-                  _buildDocumentsNote(),
-                  const SizedBox(height: AppSpacing.md),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: AppSpacing.lg,
-                    crossAxisSpacing: AppSpacing.lg,
-                    childAspectRatio: 1,
-                    children: [
-                      Center(
-                        child: _imageTile(
-                          label: 'الفيش الجنائى',
-                          imageUrl: _criminalRecordUrl,
-                          localFile: _pickedCriminalRecord,
-                          onPick: _pickCriminalRecord,
-                          uploading: _isUploading,
-                        ),
-                      ),
-                      Center(
-                        child: _imageTile(
-                          label: 'تحليل المخدرات',
-                          imageUrl: _drugTestUrl,
-                          localFile: _pickedDrugTest,
-                          onPick: _pickDrugTest,
-                          uploading: _isUploading,
-                        ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.xxl),
@@ -544,15 +380,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         : null,
                   ),
                   const SizedBox(height: AppSpacing.lg),
-                  _label('رقم رخصة القيادة'),
+                  _label('البريد الإلكتروني'),
                   const SizedBox(height: AppSpacing.sm),
                   TextFormField(
-                    controller: _licenseNumberCtrl,
+                    enabled: false,
+                    initialValue: AuthService.instance.currentUser?.email ?? '',
                     style: AppTextStyles.bodyLarge,
-                    decoration: _inputDecoration('أدخل رقم رخصة القيادة'),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'هذا الحقل مطلوب'
-                        : null,
+                    decoration: _inputDecoration('البريد الإلكتروني'),
                   ),
                   const SizedBox(height: AppSpacing.xxxl),
 

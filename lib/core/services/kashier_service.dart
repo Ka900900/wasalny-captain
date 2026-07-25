@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:kashier_flutter_sdk/kashier_flutter_sdk.dart';
 
 import 'package:waslny_captain/core/services/auth_service.dart';
+import 'package:waslny_captain/core/utils/logger.dart';
 
 /// ----------------------------------------------------------------------------
 /// Kashier Payment Service
@@ -144,9 +145,7 @@ class KashierService {
               'Payment failed – code: ${error.code}, message: ${error.message}',
             );
             final msg = error.message;
-            completer.complete(
-              msg.isNotEmpty ? msg : 'فشلت عملية الدفع',
-            );
+            completer.complete(msg.isNotEmpty ? msg : 'فشلت عملية الدفع');
           }
         },
       );
@@ -325,7 +324,6 @@ class KashierService {
   // ══════════════════════════════════════════════════════════════════════════
 
   void _debugLog(String message) {
-    // ignore: avoid_print
-    print('[KashierService] $message');
+    logInfo('KashierService', message);
   }
 }

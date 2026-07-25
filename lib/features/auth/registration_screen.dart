@@ -3,8 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:waslny_captain/widgets/image_source_picker.dart';
 
-import 'package:waslny_captain/core/models/driver_profile.dart';
-import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/image_upload_service.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
@@ -22,7 +20,18 @@ class RegistrationScreen extends StatefulWidget {
   /// Optional phone number (may be null when using Google Sign-In).
   final String? phoneNumber;
 
-  const RegistrationScreen({super.key, this.phoneNumber});
+  /// Google profile data for pre‑filling the form.
+  final String? googleName;
+  final String? googleEmail;
+  final String? googlePhotoUrl;
+
+  const RegistrationScreen({
+    super.key,
+    this.phoneNumber,
+    this.googleName,
+    this.googleEmail,
+    this.googlePhotoUrl,
+  });
 
   @override
   State<RegistrationScreen> createState() => _RegistrationScreenState();
@@ -40,6 +49,11 @@ class _RegistrationScreenState extends State<RegistrationScreen>
   // ── Profile photo ────────────────────────────────────
   File? _pickedPhoto;
   String? _uploadedPhotoUrl;
+
+  /// Google profile data for passing through to VehicleInfoScreen.
+  String? _googleName;
+  String? _googleEmail;
+  String? _googlePhotoUrl;
 
   // ── Animation ────────────────────────────────────────
   late final AnimationController _animController;
@@ -67,6 +81,23 @@ class _RegistrationScreenState extends State<RegistrationScreen>
           ),
         );
     _animController.forward();
+
+    // Store Google profile data for pre‑filling & passing through
+    if (widget.googleName != null && widget.googleName!.isNotEmpty) {
+      _googleName = widget.googleName;
+      _nameController.text = widget.googleName!;
+    }
+    if (widget.googleEmail != null && widget.googleEmail!.isNotEmpty) {
+      _googleEmail = widget.googleEmail;
+    }
+    if (widget.googlePhotoUrl != null && widget.googlePhotoUrl!.isNotEmpty) {
+      _googlePhotoUrl = widget.googlePhotoUrl;
+    }
+
+    // Pre‑fill phone number from argument if provided
+    if (widget.phoneNumber != null && widget.phoneNumber!.isNotEmpty) {
+      _phoneController.text = widget.phoneNumber!;
+    }
   }
 
   @override
@@ -104,11 +135,7 @@ class _RegistrationScreenState extends State<RegistrationScreen>
       final uid = AuthService.instance.currentUser?.uid;
       if (uid == null) throw Exception('User not authenticated');
 
-      final repo = DriverRepository.instance;
-
       // 1. Upload photo if picked (عبر الـ Backend المحمي بـ JWT)
-      // ملاحظة: وثيقة الكابتن تُنشأ عند الحفظ، لذا يُكتب حقل photoUrl في
-      // Firestore عبر createProfile أدناه فور وجود الوثيقة.
       if (_pickedPhoto != null) {
         _uploadedPhotoUrl = await ImageUploadService.instance.uploadImage(
           type: UploadType.profile,
@@ -116,34 +143,19 @@ class _RegistrationScreenState extends State<RegistrationScreen>
         );
       }
 
-      // 2. Build the profile
-      // الرقم من حقل الإدخال (إجباري بعد التحقق من الـ validator)
+      // 2. Navigate to Vehicle Information
       final String fullPhone = _phoneController.text.trim();
-      final now = DateTime.now();
-      final profile = DriverProfile(
-        uid: uid,
-        name: _nameController.text.trim(),
-        phone: fullPhone,
-        photoUrl: _uploadedPhotoUrl,
-        nationalId: _nationalIdController.text.trim(),
-        vehicleType: '',
-        vehicleModel: '',
-        vehicleColor: '',
-        vehicleNumber: '',
-        documentsGraceEndsAt: now.add(const Duration(days: 30)),
-        createdAt: now,
-        updatedAt: now,
-      );
-
-      // 3. Persist to Firestore
-      await repo.createProfile(profile);
-
-      // 4. Navigate to Vehicle Information (مع تمرير رقم الهاتف)
       if (mounted) {
         Navigator.pushReplacementNamed(
           context,
           '/vehicle-info',
-          arguments: {'phoneNumber': fullPhone},
+          arguments: <String, dynamic>{
+            'phoneNumber': fullPhone,
+            'name': _googleName,
+            'email': _googleEmail,
+            'photoUrl': _uploadedPhotoUrl ?? _googlePhotoUrl,
+            'nationalId': _nationalIdController.text.trim(),
+          },
         );
       }
     } catch (e) {
@@ -243,8 +255,12 @@ class _RegistrationScreenState extends State<RegistrationScreen>
                                 backgroundColor: AppColors.glassBg,
                                 backgroundImage: _pickedPhoto != null
                                     ? FileImage(_pickedPhoto!)
-                                    : null,
-                                child: _pickedPhoto == null
+                                    : (_googlePhotoUrl != null
+                                          ? NetworkImage(_googlePhotoUrl!)
+                                          : null),
+                                child:
+                                    _pickedPhoto == null &&
+                                        _googlePhotoUrl == null
                                     ? const Icon(
                                         Icons.camera_alt,
                                         color: AppColors.textSecondary,

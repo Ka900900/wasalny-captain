@@ -1,13 +1,15 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:waslny_captain/widgets/image_source_picker.dart';
 
-import 'package:waslny_captain/core/models/driver_profile.dart';
-import 'package:waslny_captain/core/repositories/driver_repository.dart';
+import 'package:waslny_captain/core/network/api_exceptions.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/image_upload_service.dart';
+import 'package:waslny_captain/core/services/document_upload_service.dart';
+import 'package:waslny_captain/features/verification/camera_screen.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
 
 /// Vehicle Information screen for new captains (after Registration).
@@ -23,7 +25,20 @@ import 'package:waslny_captain/core/theme/app_theme.dart';
 class VehicleInfoScreen extends StatefulWidget {
   final dynamic captain; // optional CaptainModel
   final String? phoneNumber; // رقم الهاتف من شاشة التسجيل
-  const VehicleInfoScreen({super.key, this.captain, this.phoneNumber});
+
+  /// بيانات ملف Google الشخصي (تُستخدم للتعبئة المسبقة عند تسجيل الدخول عبر Google).
+  final String? googleName;
+  final String? googleEmail;
+  final String? googlePhotoUrl;
+
+  const VehicleInfoScreen({
+    super.key,
+    this.captain,
+    this.phoneNumber,
+    this.googleName,
+    this.googleEmail,
+    this.googlePhotoUrl,
+  });
 
   @override
   State<VehicleInfoScreen> createState() => _VehicleInfoScreenState();
@@ -35,6 +50,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   String? _selectedModel;
   final TextEditingController _colorController = TextEditingController();
   final TextEditingController _plateController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -42,10 +58,23 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   String _vehicleType = 'private';
   DriverProfile? _profile;
   String? _licenseUrl;
-  File? _pickedLicense;
+  String? _licenseBackUrl;
+  String? _idCardUrl;
+  String? _idCardBackUrl;
   String? _carPhotoUrl;
   File? _pickedCarPhoto;
+  String? _criminalRecordUrl;
+  File? _pickedCriminalRecord;
+  String? _drugTestUrl;
+  File? _pickedDrugTest;
+  final TextEditingController _licenseNumberCtrl = TextEditingController();
   String? _phoneNumber; // رقم الهاتف من شاشة التسجيل
+  String? _nationalId; // الرقم القومي من شاشة التسجيل
+
+  /// اسم المستخدم من Google (يُعرض في بطاقة المستخدم ويُستخدم عند الحفظ).
+  String? _googleName;
+  String? _googleEmail;
+  String? _googlePhotoUrl;
 
   static const List<String> _vehicleTypes = [
     'private',
@@ -188,10 +217,6 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
     }
   }
 
-  /// نسخة مسطّحة من موديلات نوع المركبة الحالي (للتحقق من القيمة المحفوظة).
-  List<String> get _availableModels =>
-      _modelsByCategory.values.expand((m) => m).toList();
-
   /// نسخة مسطّحة من كل الموديلات (كل الأنواع) — تُستخدم للتحقق من القيمة المحفوظة مسبقاً.
   static final List<String> _allModels = <String>{
     ..._carModelsByCategory.values.expand((m) => m),
@@ -226,19 +251,47 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         );
     _animController.forward();
 
-    // 1) تحديد رقم الهاتف من الـ widget مباشرة (متزامن، لا يحتاج context)
+    // 1) قراءة بيانات Google من الـ widget مباشرة
+    if (widget.googleName != null && widget.googleName!.isNotEmpty) {
+      _googleName = widget.googleName;
+    }
+    if (widget.googleEmail != null && widget.googleEmail!.isNotEmpty) {
+      _googleEmail = widget.googleEmail;
+    }
+    if (widget.googlePhotoUrl != null && widget.googlePhotoUrl!.isNotEmpty) {
+      _googlePhotoUrl = widget.googlePhotoUrl;
+    }
+
+    // 2) تحديد رقم الهاتف من الـ widget مباشرة
     if (widget.phoneNumber != null && widget.phoneNumber!.isNotEmpty) {
       _phoneNumber = widget.phoneNumber;
     }
 
-    // 2) قراءة arguments فقط داخل addPostFrameCallback (يتجنّب .of(context) في initState)
-    //    واستدعاء _loadProfile() هنا بعد التأكد من القيمة النهائية لـ _phoneNumber
+    // 3) قراءة arguments داخل addPostFrameCallback (يتجنّب .of(context) في initState)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_phoneNumber == null || _phoneNumber!.isEmpty) {
-        final args = ModalRoute.of(context)?.settings.arguments;
-        if (args is Map && args['phoneNumber'] != null) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map) {
+        // قراءة رقم الهاتف من الـ arguments
+        if ((_phoneNumber == null || _phoneNumber!.isEmpty) &&
+            args['phoneNumber'] != null) {
           _phoneNumber = args['phoneNumber'] as String;
+        }
+        // قراءة بيانات Google من الـ arguments إذا لم تكن قد أعطيت للـ widget
+        if ((_googleName == null || _googleName!.isEmpty) &&
+            args['name'] != null) {
+          _googleName = args['name'] as String? ?? '';
+        }
+        if ((_googleEmail == null || _googleEmail!.isEmpty) &&
+            args['email'] != null) {
+          _googleEmail = args['email'] as String? ?? '';
+        }
+        if ((_googlePhotoUrl == null || _googlePhotoUrl!.isEmpty) &&
+            args['photoUrl'] != null) {
+          _googlePhotoUrl = args['photoUrl'] as String? ?? '';
+        }
+        if (args['nationalId'] != null) {
+          _nationalId = args['nationalId'] as String;
         }
       }
       _loadProfile();
@@ -249,6 +302,8 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   void dispose() {
     _colorController.dispose();
     _plateController.dispose();
+    _phoneController.dispose();
+    _licenseNumberCtrl.dispose();
     _animController.dispose();
     super.dispose();
   }
@@ -258,48 +313,270 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   // ──────────────────────────────────────────────────────
 
   Future<void> _loadProfile() async {
-    final uid = AuthService.instance.currentUser?.uid;
-    if (uid == null) {
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-      }
-      return;
+    // No Firestore read needed — backend API is the source of truth.
+    // Form is used only for new registration (existing users skip to /home).
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
-    try {
-      final profile = await DriverRepository.instance.getProfile(uid);
-      if (mounted) {
-        setState(() {
-          _profile = profile;
-          if (profile != null) {
-            _vehicleType = _vehicleTypes.contains(profile.vehicleType)
-                ? profile.vehicleType
-                : 'private';
-            _selectedModel = _allModels.contains(profile.vehicleModel)
-                ? profile.vehicleModel
-                : null;
-            _colorController.text = profile.vehicleColor;
-            _plateController.text = profile.vehicleNumber;
-            _licenseUrl = profile.licenseUrl;
-            _carPhotoUrl = profile.carPhotoUrl;
-          }
-          _isLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  }
+
+  // ──────────────────────────────────────────────────────
+  // User Info Card (Google pre‑filled data)
+  // ──────────────────────────────────────────────────────
+
+  /// Builds a card showing the Google profile data at the top of the form.
+  Widget _buildUserInfoCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppColors.primaryFaded),
+      ),
+      child: Row(
+        children: [
+          // Profile photo
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: AppColors.primaryContainer,
+            backgroundImage:
+                (_googlePhotoUrl != null && _googlePhotoUrl!.isNotEmpty)
+                ? NetworkImage(_googlePhotoUrl!)
+                : null,
+            child: (_googlePhotoUrl == null || _googlePhotoUrl!.isEmpty)
+                ? const Icon(Icons.person, color: AppColors.textSecondary)
+                : null,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          // Name + Email
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _googleName ?? '',
+                  style: AppTextStyles.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (_googleEmail != null && _googleEmail!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      _googleEmail!,
+                      style: AppTextStyles.labelSmall?.copyWith(
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xxs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.successContainer,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+                  ),
+                  child: Text(
+                    'حساب Google',
+                    style: AppTextStyles.labelSmall?.copyWith(
+                      color: AppColors.success,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Edit icon (optional)
+          const Icon(Icons.check_circle, color: AppColors.success, size: 20),
+        ],
+      ),
+    );
   }
 
   // ──────────────────────────────────────────────────────
   // Save
   // ──────────────────────────────────────────────────────
 
-  Future<void> _pickLicense() async {
+  /// Opens custom camera, captures with retake option, then uploads immediately.
+  Future<File?> _captureWithRetake() async {
+    while (true) {
+      if (!mounted) return null;
+      final result = await Navigator.of(context).push<CameraCaptureResult>(
+        MaterialPageRoute(
+          builder: (_) => const CameraScreen(mode: CaptureMode.document),
+        ),
+      );
+      if (result == null) return null;
+      final file = File(result.filePath);
+      if (!mounted) return null;
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surfaceDark,
+          content: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.file(file, height: 300, fit: BoxFit.contain),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(
+                'إعادة',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonGreen,
+              ),
+              child: const Text('تأكيد', style: TextStyle(color: Colors.black)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) return file;
+    }
+  }
+
+  Future<void> _captureAndUploadDoc({
+    required UploadDocType docType,
+    required void Function(String url) onUrl,
+    required String label,
+  }) async {
+    final file = await _captureWithRetake();
+    if (file == null || !mounted) return;
+
+    try {
+      final result = await DocumentUploadService.instance
+          .uploadImage(docType: docType, file: file)
+          .first;
+      if (result.success && result.imageUrl != null && mounted) {
+        setState(() => onUrl(result.imageUrl!));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل رفع $label: ${result.error ?? 'خطأ غير معروف'}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ أثناء رفع $label'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _captureIdCardFront() => _captureAndUploadDoc(
+    docType: UploadDocType.idFront,
+    onUrl: (url) => _idCardUrl = url,
+    label: 'البطاقة (وجه)',
+  );
+
+  Future<void> _captureIdCardBack() => _captureAndUploadDoc(
+    docType: UploadDocType.idBack,
+    onUrl: (url) => _idCardBackUrl = url,
+    label: 'البطاقة (ظهر)',
+  );
+
+  Future<void> _captureLicenseFront() => _captureAndUploadDoc(
+    docType: UploadDocType.license,
+    onUrl: (url) => _licenseUrl = url,
+    label: 'الرخصة (وجه)',
+  );
+
+  Future<void> _captureLicenseBack() => _captureAndUploadDoc(
+    docType: UploadDocType.licenseBack,
+    onUrl: (url) => _licenseBackUrl = url,
+    label: 'الرخصة (ظهر)',
+  );
+
+  Widget _buildDocPreview({required String label, required String? imageUrl}) {
+    return Container(
+      height: 120,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: imageUrl != null
+              ? AppColors.neonGreen
+              : AppColors.textSecondary,
+        ),
+        image: imageUrl != null
+            ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover)
+            : null,
+      ),
+      child: imageUrl == null
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.camera_alt_outlined,
+                  color: AppColors.textSecondary,
+                  size: 28,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            )
+          : Stack(
+              alignment: Alignment.topRight,
+              children: [
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: AppColors.neonGreen,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Future<void> _pickCriminalRecord() async {
     final picked = await pickImageWithSourceSheet(context);
     if (picked != null) {
       setState(() {
-        _pickedLicense = File(picked.path);
-        _licenseUrl = null;
+        _pickedCriminalRecord = File(picked.path);
+        _criminalRecordUrl = null;
+      });
+    }
+  }
+
+  Future<void> _pickDrugTest() async {
+    final picked = await pickImageWithSourceSheet(context);
+    if (picked != null) {
+      setState(() {
+        _pickedDrugTest = File(picked.path);
+        _drugTestUrl = null;
       });
     }
   }
@@ -336,18 +613,31 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
       final uid = AuthService.instance.currentUser?.uid;
       if (uid == null) throw Exception('User not authenticated');
 
-      final repo = DriverRepository.instance;
-      final existing = _profile;
+      // No Firestore read/write — backend API is the source of truth.
 
-      if (_pickedLicense != null) {
-        _licenseUrl = await ImageUploadService.instance.uploadImage(
-          type: UploadType.license,
-          file: _pickedLicense!,
+      // License and ID card images are uploaded immediately after capture
+      // via _captureAndUploadDoc, so no upload needed here.
+
+      if (_pickedCriminalRecord != null) {
+        _criminalRecordUrl = await ImageUploadService.instance.uploadImage(
+          type: UploadType.idCard,
+          file: _pickedCriminalRecord!,
         );
-        // إن فشل الرفع (يرجع null) نوقف الحفظ فوراً ونُعلِم الكابتن
-        if (_licenseUrl == null) {
+        if (_criminalRecordUrl == null) {
           throw Exception(
-            'تعذر رفع صورة الرخصة. تحقق من الاتصال وحاول مرة أخرى.',
+            'تعذر رفع الفيش الجنائى. تحقق من الاتصال وحاول مرة أخرى.',
+          );
+        }
+      }
+
+      if (_pickedDrugTest != null) {
+        _drugTestUrl = await ImageUploadService.instance.uploadImage(
+          type: UploadType.insurance,
+          file: _pickedDrugTest!,
+        );
+        if (_drugTestUrl == null) {
+          throw Exception(
+            'تعذر رفع تحليل المخدرات. تحقق من الاتصال وحاول مرة أخرى.',
           );
         }
       }
@@ -365,33 +655,70 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         }
       }
 
-      // Update the existing profile with vehicle fields
-      final updatedProfile = DriverProfile(
-        uid: uid,
-        name: existing?.name ?? '',
-        phone: existing?.phone ?? '',
-        photoUrl: existing?.photoUrl,
-        nationalId: existing?.nationalId,
-        vehicleType: _vehicleType,
-        vehicleModel: _selectedModel?.trim() ?? '',
-        vehicleColor: _colorController.text.trim(),
-        vehicleNumber: _plateController.text.trim(),
-        licenseUrl: _licenseUrl,
-        carPhotoUrl: _carPhotoUrl,
-        criminalRecordUrl: existing?.criminalRecordUrl,
-        drugTestUrl: existing?.drugTestUrl,
-        documentsGraceEndsAt: existing?.documentsGraceEndsAt,
-        createdAt: existing?.createdAt ?? DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
-      await repo.saveProfile(updatedProfile);
-
-      // 4. تسجيل الكابتن في الباك إند (يربط رقم الهاتف + بيانات العربية)
-      final phone = _phoneNumber ?? updatedProfile.phone;
+      final phoneCtrl = _phoneController.text.trim();
+      final phone =
+          _phoneNumber ?? (phoneCtrl.isNotEmpty ? phoneCtrl : null) ?? '';
       if (phone.isEmpty) {
         throw Exception('رقم الهاتف غير متوفر للتسجيل');
       }
+
+      // ── التحقق من الحقول المطلوبة قبل إرسال الـ API ──────────
+      if (_selectedModel == null || _selectedModel!.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('يرجى اختيار موديل المركبة'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+      if (_plateController.text.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('يرجى إدخال رقم اللوحة'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+      if (_colorController.text.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('يرجى إدخال لون المركبة'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+
+      // 4. تسجيل الكابتن في الباك إند (يربط رقم الهاتف + بيانات العربية + بيانات Google)
+      debugPrint('═══════════════════════════════════════════════════');
+      debugPrint('📋 _save → registerDriver request:');
+      debugPrint('   carModel:        ${_selectedModel?.trim() ?? ''}');
+      debugPrint('   carPlateNumber:  ${_plateController.text.trim()}');
+      debugPrint('   carColor:        ${_colorController.text.trim()}');
+      debugPrint(
+        '   vehicleType:     ${_vehicleTypeToBackend[_vehicleType] ?? _vehicleType.toUpperCase()}',
+      );
+      debugPrint('   carPhotoUrl:     ${_carPhotoUrl ?? ''}');
+      debugPrint('   name:            $_googleName');
+      debugPrint('   email:           $_googleEmail');
+      debugPrint('   photoUrl:        $_googlePhotoUrl');
+      debugPrint('   phoneNumber:     $phone');
+      debugPrint(
+        '   criminalRecord:  ${_criminalRecordUrl != null ? 'present' : 'null'}',
+      );
+      debugPrint(
+        '   drugTest:        ${_drugTestUrl != null ? 'present' : 'null'}',
+      );
+      debugPrint('═══════════════════════════════════════════════════');
+
       await ApiService.instance.registerDriver(
         carModel: _selectedModel?.trim() ?? '',
         carPlateNumber: _plateController.text.trim(),
@@ -399,24 +726,83 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         vehicleType:
             _vehicleTypeToBackend[_vehicleType] ?? _vehicleType.toUpperCase(),
         carPhotoUrl: _carPhotoUrl ?? '',
+        name: _googleName,
+        email: _googleEmail,
+        photoUrl: _googlePhotoUrl,
+        phoneNumber: phone,
+        nationalId: _nationalId,
+        idCardUrl: _idCardUrl,
+        idCardBackUrl: _idCardBackUrl,
+        licenseUrl: _licenseUrl,
+        licenseBackUrl: _licenseBackUrl,
+        licenseNumber: _licenseNumberCtrl.text.trim(),
+        criminalRecordUrl: _criminalRecordUrl,
+        drugTestUrl: _drugTestUrl,
       );
 
       // Navigate to Home
+      debugPrint('═══════════════════════════════════════════════════');
+      debugPrint('✅ _save → registerDriver SUCCESS — navigating to /home');
+      debugPrint('═══════════════════════════════════════════════════');
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
       }
     } catch (e) {
       if (mounted) {
-        String msg = 'حدث خطأ أثناء التسجيل';
+        String msg;
         if (e is ApiException) {
-          // 409 = رقم الهاتف مسجل لحساب تاني
           msg = e.message;
+        } else if (e is DioException) {
+          // محاولة استخراج رسالة الخطأ من رد الباك إند
+          final data = e.response?.data;
+          if (data != null) {
+            if (data is Map) {
+              msg =
+                  (data['message'] ??
+                          data['error'] ??
+                          data['msg'] ??
+                          data.toString())
+                      .toString();
+            } else {
+              msg = data.toString();
+            }
+          } else {
+            msg = 'خطأ في الاتصال بالخادم (${e.response?.statusCode ?? ''})';
+          }
         } else {
           msg = 'حدث خطأ أثناء التسجيل: $e';
         }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text(msg, style: const TextStyle(fontSize: 14)),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'نسخ',
+              textColor: Colors.white,
+              onPressed: () {
+                // نسخ الخطأ للحافظة (يتم عبر Clipboard)
+              },
+            ),
+          ),
         );
+        // طباعة الخطأ كاملاً في الـ console
+        debugPrint('🧨 _save catch-block: $e');
+        debugPrint('🧨 ERROR TYPE: ${e.runtimeType}');
+        if (e is ApiException) {
+          debugPrint('🧨 ApiException statusCode: ${e.statusCode}');
+          debugPrint('🧨 ApiException message: ${e.message}');
+        }
+        if (e is DioException) {
+          debugPrint('🧨 DioException type: ${e.type}');
+          debugPrint('🧨 response.statusCode: ${e.response?.statusCode}');
+          debugPrint('🧨 response.data: ${e.response?.data}');
+          debugPrint('🧨 response.headers: ${e.response?.headers}');
+          debugPrint('🧨 requestOptions.uri: ${e.requestOptions.uri}');
+          debugPrint('⬤ requestOptions.method: ${e.requestOptions.method}');
+          debugPrint('🧨 requestOptions.data: ${e.requestOptions.data}');
+          debugPrint('🧨 requestOptions.headers: ${e.requestOptions.headers}');
+        }
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -501,7 +887,46 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                 'أدخل بيانات مركبتك لبدء استقبال الرحلات',
                                 style: Theme.of(context).textTheme.bodyLarge,
                               ),
-                              const SizedBox(height: 36),
+                              const SizedBox(height: 24),
+
+                              // ── Google User Info Card ─────
+                              if (_googleName != null &&
+                                  _googleName!.isNotEmpty)
+                                _buildUserInfoCard(),
+                              if (_googleName != null &&
+                                  _googleName!.isNotEmpty)
+                                const SizedBox(height: 24),
+
+                              // ── Phone Number (Google users) ─
+                              if (_googleName != null &&
+                                  _googleName!.isNotEmpty &&
+                                  (_phoneNumber == null ||
+                                      _phoneNumber!.isEmpty)) ...[
+                                TextFormField(
+                                  controller: _phoneController,
+                                  keyboardType: TextInputType.phone,
+                                  textDirection: TextDirection.ltr,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    hintText: '01xxxxxxxxx',
+                                    labelText: 'رقم الهاتف',
+                                    prefixIcon: Icon(
+                                      Icons.phone,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'يرجى إدخال رقم الهاتف';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 18),
+                              ],
 
                               // ── Vehicle Type ──────────────
                               DropdownButtonFormField<String>(
@@ -664,11 +1089,117 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                               ),
                               const SizedBox(height: 18),
 
-                              // ── License upload ────────────
+                              // ── License Number ────────────
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: Text(
-                                  'صورة رخصة السيارة',
+                                  'رقم رخصة القيادة',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: _licenseNumberCtrl,
+                                keyboardType: TextInputType.text,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                ),
+                                decoration: const InputDecoration(
+                                  hintText: 'أدخل رقم رخصة القيادة',
+                                  labelText: 'رقم الرخصة',
+                                  prefixIcon: Icon(
+                                    Icons.badge_outlined,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              // ── ID Card ────────────────────
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  'البطاقة الشخصية',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _captureIdCardFront,
+                                      child: _buildDocPreview(
+                                        label: 'الوجه الأمامي',
+                                        imageUrl: _idCardUrl,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _captureIdCardBack,
+                                      child: _buildDocPreview(
+                                        label: 'الوجه الخلفي',
+                                        imageUrl: _idCardBackUrl,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 18),
+
+                              // ── License ────────────────────
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  'رخصة القيادة',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _captureLicenseFront,
+                                      child: _buildDocPreview(
+                                        label: 'الوجه الأمامي',
+                                        imageUrl: _licenseUrl,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _captureLicenseBack,
+                                      child: _buildDocPreview(
+                                        label: 'الوجه الخلفي',
+                                        imageUrl: _licenseBackUrl,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 18),
+
+                              // ── Criminal Record upload ────
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  'الفيش الجنائى',
                                   style: const TextStyle(
                                     color: AppColors.textSecondary,
                                     fontSize: 14,
@@ -677,7 +1208,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                               ),
                               const SizedBox(height: 10),
                               GestureDetector(
-                                onTap: _pickLicense,
+                                onTap: _pickCriminalRecord,
                                 child: Container(
                                   width: double.infinity,
                                   height: 140,
@@ -685,37 +1216,43 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                     color: AppColors.surfaceDark,
                                     borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
-                                      color: AppColors.textSecondary,
+                                      color:
+                                          _criminalRecordUrl != null ||
+                                              _pickedCriminalRecord != null
+                                          ? AppColors.neonGreen
+                                          : AppColors.textSecondary,
                                     ),
-                                    image: _pickedLicense != null
+                                    image: _pickedCriminalRecord != null
                                         ? DecorationImage(
-                                            image: FileImage(_pickedLicense!),
+                                            image: FileImage(
+                                              _pickedCriminalRecord!,
+                                            ),
                                             fit: BoxFit.cover,
                                           )
-                                        : (_licenseUrl != null
+                                        : (_criminalRecordUrl != null
                                               ? DecorationImage(
                                                   image: NetworkImage(
-                                                    _licenseUrl!,
+                                                    _criminalRecordUrl!,
                                                   ),
                                                   fit: BoxFit.cover,
                                                 )
                                               : null),
                                   ),
                                   child:
-                                      _pickedLicense == null &&
-                                          _licenseUrl == null
+                                      _pickedCriminalRecord == null &&
+                                          _criminalRecordUrl == null
                                       ? Column(
                                           mainAxisAlignment:
                                               MainAxisAlignment.center,
                                           children: const [
                                             Icon(
-                                              Icons.camera_alt_outlined,
+                                              Icons.description_outlined,
                                               color: AppColors.textSecondary,
                                               size: 32,
                                             ),
                                             SizedBox(height: 8),
                                             Text(
-                                              'اضغط لاختيار صورة رخصة السيارة',
+                                              'اضغط لاختيار الفيش الجنائى',
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
                                                 color: AppColors.textSecondary,
@@ -725,6 +1262,93 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                           ],
                                         )
                                       : null,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '(اختياري الآن - متاح استكماله خلال 30 يوم من التسجيل)',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              // ── Drug Test upload ──────────
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  'تحليل المخدرات',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              GestureDetector(
+                                onTap: _pickDrugTest,
+                                child: Container(
+                                  width: double.infinity,
+                                  height: 140,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceDark,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color:
+                                          _drugTestUrl != null ||
+                                              _pickedDrugTest != null
+                                          ? AppColors.neonGreen
+                                          : AppColors.textSecondary,
+                                    ),
+                                    image: _pickedDrugTest != null
+                                        ? DecorationImage(
+                                            image: FileImage(_pickedDrugTest!),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : (_drugTestUrl != null
+                                              ? DecorationImage(
+                                                  image: NetworkImage(
+                                                    _drugTestUrl!,
+                                                  ),
+                                                  fit: BoxFit.cover,
+                                                )
+                                              : null),
+                                  ),
+                                  child:
+                                      _pickedDrugTest == null &&
+                                          _drugTestUrl == null
+                                      ? Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: const [
+                                            Icon(
+                                              Icons.medication_outlined,
+                                              color: AppColors.textSecondary,
+                                              size: 32,
+                                            ),
+                                            SizedBox(height: 8),
+                                            Text(
+                                              'اضغط لاختيار تحليل المخدرات',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                color: AppColors.textSecondary,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '(اختياري الآن - متاح استكماله خلال 30 يوم من التسجيل)',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 12,
                                 ),
                               ),
                               const SizedBox(height: 18),

@@ -1,11 +1,14 @@
 // ignore_for_file: use_null_aware_elements
 
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+
+import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:waslny_captain/core/network/api_exceptions.dart';
+import 'package:waslny_captain/core/network/dio_client.dart';
 import 'package:waslny_captain/core/models/ride_model.dart';
+import 'package:waslny_captain/core/utils/logger.dart';
 
 /// HTTP API client for communicating with the Waslny Backend API.
 ///
@@ -52,7 +55,7 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_tokenStorageKey, token);
     } catch (e) {
-      debugPrint('saveToken persist failed: $e');
+      logError('ApiService', 'saveToken persist failed: $e', e);
     }
   }
 
@@ -65,7 +68,7 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       _token = prefs.getString(_tokenStorageKey);
     } catch (e) {
-      debugPrint('loadToken failed: $e');
+      logError('ApiService', 'loadToken failed: $e', e);
     }
   }
 
@@ -86,11 +89,33 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_tokenStorageKey);
     } catch (e) {
-      debugPrint('clearToken persist failed: $e');
+      logError('ApiService', 'clearToken persist failed: $e', e);
     }
   }
 
   bool get hasToken => _token != null && _token!.isNotEmpty;
+
+  /// Decodes the stored JWT and returns the `userId` claim from its payload,
+  /// or `null` if the token is missing / malformed.
+  String? get userId {
+    if (_token == null) return null;
+    try {
+      final parts = _token!.split('.');
+      if (parts.length != 3) return null;
+      // Normalise Base64‑URL → Base64 (padding + URL‑safe chars).
+      var payload = parts[1];
+      payload = payload.padRight(
+        payload.length + (4 - payload.length % 4) % 4,
+        '=',
+      );
+      payload = payload.replaceAll('-', '+').replaceAll('_', '/');
+      final decoded = utf8.decode(base64.decode(payload));
+      final json = jsonDecode(decoded) as Map<String, dynamic>;
+      return json['userId'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Ensures a JWT is present in memory before sending an authenticated
   /// request. If the in-memory token is missing (e.g. after a cold start),
@@ -100,29 +125,8 @@ class ApiService {
     await loadToken();
   }
 
-  // ── HTTP Helpers ─────────────────────────────────────
-
-  Map<String, String> _headers({bool auth = true}) {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
-    if (auth && _token != null && _token!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $_token';
-    }
-    return headers;
-  }
-
-  Future<Map<String, dynamic>> _handleResponse(http.Response response) async {
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return body;
-    }
-    throw ApiException(
-      message: body['error'] as String? ?? 'خطأ في الاتصال بالسيرفر',
-      statusCode: response.statusCode,
-    );
-  }
+  /// Shortcut to the shared Dio instance.
+  Dio get _dio => DioClient.instance.dio;
 
   // ── Auth Endpoints ───────────────────────────────────
 
@@ -136,12 +140,11 @@ class ApiService {
     String firebaseIdToken,
   ) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/auth/firebase'),
-      headers: _headers(auth: false),
-      body: jsonEncode({'idToken': firebaseIdToken}),
+    final response = await _dio.post(
+      '/auth/firebase-login',
+      data: {'firebaseIdToken': firebaseIdToken},
     );
-    final result = await _handleResponse(response);
+    final result = response.data as Map<String, dynamic>;
     if (result['token'] != null) {
       saveToken(result['token'] as String);
     }
@@ -160,53 +163,163 @@ class ApiService {
     if (!backendEnabled) return false;
     if (token.isEmpty) return false;
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/auth/register-fcm-token'),
-        headers: _headers(),
-        body: jsonEncode({'fcmToken': token}),
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        debugPrint('✅ FCM token registered with backend');
-        return true;
-      }
-      debugPrint(
-        'updateFcmTokenToServer failed: ${response.statusCode} ${response.body}',
+      await _dio.post('/auth/register-fcm-token', data: {'fcmToken': token});
+      logInfo('ApiService', '✅ FCM token registered with backend');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'updateFcmTokenToServer failed: ${e.response?.statusCode} ${e.response?.data}',
       );
       return false;
     } catch (e) {
-      debugPrint('updateFcmTokenToServer error: $e');
+      logError('ApiService', 'updateFcmTokenToServer error: $e', e);
       return false;
     }
   }
 
-  /// Register as a driver
+  /// Register as a driver.
+  ///
+  /// Sends vehicle info plus optional Google profile data (`name`, `email`,
+  /// `photoUrl`) so the backend can create or update the `User` record with
+  /// Google account details alongside the driver-specific fields.
   Future<Map<String, dynamic>> registerDriver({
     required String carModel,
     required String carPlateNumber,
     required String carColor,
     required String vehicleType,
     required String carPhotoUrl,
+    String? name,
+    String? email,
+    String? photoUrl,
+    String? phoneNumber,
+    String? nationalId,
+    String? idCardUrl,
+    String? idCardBackUrl,
+    String? licenseUrl,
+    String? licenseBackUrl,
+    String? licenseNumber,
+    String? criminalRecordUrl,
+    String? drugTestUrl,
   }) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/auth/register-driver'),
-      headers: _headers(),
-      body: jsonEncode({
-        // Explicitly register as a DRIVER so the backend does not default
-        // the account to "RIDER" (which would cause 403 on driver endpoints).
-        'role': 'DRIVER',
-        'carModel': carModel,
-        'carPlateNumber': carPlateNumber,
-        'carColor': carColor,
-        'vehicleType': vehicleType,
-        'carPhotoUrl': carPhotoUrl,
-      }),
-    );
-    final result = await _handleResponse(response);
-    if (result['token'] != null) {
-      saveToken(result['token'] as String);
+
+    // بناء الـ payload للتأكد من صحة البيانات قبل الإرسال
+    final Map<String, dynamic> payload = {
+      'role': 'DRIVER',
+      'carModel': carModel,
+      'carPlateNumber': carPlateNumber,
+      'carColor': carColor,
+      'vehicleType': vehicleType,
+      'carPhotoUrl': carPhotoUrl,
+      if (name != null && name.isNotEmpty) 'name': name,
+      if (email != null && email.isNotEmpty) 'email': email,
+      if (photoUrl != null && photoUrl.isNotEmpty) 'photoUrl': photoUrl,
+      if (phoneNumber != null && phoneNumber.isNotEmpty)
+        'phoneNumber': phoneNumber,
+      if (nationalId != null && nationalId.isNotEmpty) 'nationalId': nationalId,
+      if (idCardUrl != null && idCardUrl.isNotEmpty) 'idCardUrl': idCardUrl,
+      if (idCardBackUrl != null && idCardBackUrl.isNotEmpty)
+        'idCardBackUrl': idCardBackUrl,
+      if (licenseUrl != null && licenseUrl.isNotEmpty) 'licenseUrl': licenseUrl,
+      if (licenseBackUrl != null && licenseBackUrl.isNotEmpty)
+        'licenseBackUrl': licenseBackUrl,
+      if (licenseNumber != null && licenseNumber.isNotEmpty)
+        'licenseNumber': licenseNumber,
+      // الوثائق الاختيارية — تُرسل فقط إذا وفرها الكابتن
+      if (criminalRecordUrl != null && criminalRecordUrl.isNotEmpty)
+        'criminalRecordUrl': criminalRecordUrl,
+      if (drugTestUrl != null && drugTestUrl.isNotEmpty)
+        'drugTestUrl': drugTestUrl,
+    };
+
+    logInfo('ApiService', 'registerDriver ➡️ payload: ${jsonEncode(payload)}');
+
+    try {
+      logInfo(
+        'ApiService',
+        'registerDriver 🌐 POST ${_dio.options.baseUrl}/auth/register-driver',
+      );
+      logInfo('ApiService', 'registerDriver 📋 Body: ${jsonEncode(payload)}');
+      final response = await _dio.post('/auth/register-driver', data: payload);
+      logInfo(
+        'ApiService',
+        'registerDriver ✅ Response status: ${response.statusCode}',
+      );
+      logInfo('ApiService', 'registerDriver ✅ Response body: ${response.data}');
+      final result = response.data as Map<String, dynamic>;
+      if (result['token'] != null) {
+        saveToken(result['token'] as String);
+      }
+      return result;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'registerDriver ❌ status ${e.response?.statusCode} | '
+            'body: ${e.response?.data} | '
+            'request: ${e.requestOptions.data} | '
+            'url: ${e.requestOptions.uri} | '
+            'type: ${e.type}',
+      );
+      logWarning(
+        'ApiService',
+        'registerDriver 🔍 Full error details:\n'
+            '  URI: ${e.requestOptions.uri}\n'
+            '  Method: ${e.requestOptions.method}\n'
+            '  Headers: ${e.requestOptions.headers}\n'
+            '  Status: ${e.response?.statusCode}\n'
+            '  Response: ${e.response?.data}\n'
+            '  DioException type: ${e.type}',
+      );
+      // إعادة الرمي مع إرفاق رسالة الخطأ من الباك إند لتظهر للمستخدم
+      throw ApiException(
+        message:
+            _extractBackendMessage(e) ??
+            'فشل التسجيل في الباك إند (${e.response?.statusCode})',
+      );
     }
-    return result;
+  }
+
+  /// يستخرج رسالة الخطأ من رد الباك إند.
+  String? _extractBackendMessage(DioException e) {
+    try {
+      final data = e.response?.data;
+      if (data == null) return null;
+      if (data is String) return data;
+      if (data is Map) {
+        // محاولة قراءة الحقول المعروفة لرسائل الخطأ
+        return (data['message'] ?? data['error'] ?? data['msg'] ?? '')
+            .toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Checks whether the current JWT belongs to a fully‑registered driver on
+  /// the backend (i.e. a driverProfile record exists).
+  ///
+  /// Calls `GET /driver/earnings?period=daily` which returns **200** when the
+  /// driver profile exists, or **404** when it does not. Returns `true` only
+  /// on a 2xx response; any error (404, 403, timeout, etc.) returns `false`.
+  Future<bool> isDriverRegistered() async {
+    if (!backendEnabled) return false;
+    await _ensureTokenLoaded();
+    try {
+      final response = await _dio.get(
+        '/driver/earnings',
+        queryParameters: {'period': 'daily'},
+      );
+      return response.statusCode != null && response.statusCode! < 300;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'isDriverRegistered ❌ ${e.response?.statusCode} ${e.response?.data}',
+      );
+      return false;
+    } catch (e) {
+      logError('ApiService', 'isDriverRegistered error: $e', e);
+      return false;
+    }
   }
 
   // ── Wallet Endpoints ─────────────────────────────────
@@ -215,22 +328,16 @@ class ApiService {
   Future<Map<String, dynamic>> getWalletBalance() async {
     if (!backendEnabled) return <String, dynamic>{};
     await _ensureTokenLoaded();
-    final response = await http.get(
-      Uri.parse('$_baseUrl/wallet/balance'),
-      headers: _headers(),
-    );
-    return _handleResponse(response);
+    final response = await _dio.get('/wallet/balance');
+    return response.data as Map<String, dynamic>;
   }
 
   /// Get wallet transactions
   Future<Map<String, dynamic>> getWalletTransactions() async {
     if (!backendEnabled) return <String, dynamic>{};
     await _ensureTokenLoaded();
-    final response = await http.get(
-      Uri.parse('$_baseUrl/wallet/transactions'),
-      headers: _headers(),
-    );
-    return _handleResponse(response);
+    final response = await _dio.get('/wallet/transactions');
+    return response.data as Map<String, dynamic>;
   }
 
   /// Request a withdrawal
@@ -241,28 +348,24 @@ class ApiService {
     required String accountHolder,
   }) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/wallet/withdraw'),
-      headers: _headers(),
-      body: jsonEncode({
+    final response = await _dio.post(
+      '/wallet/withdraw',
+      data: {
         'amount': amount,
         'bankName': bankName,
         'bankAccount': bankAccount,
         'accountHolder': accountHolder,
-      }),
+      },
     );
-    return _handleResponse(response);
+    return response.data as Map<String, dynamic>;
   }
 
   /// Get withdrawal history
   Future<Map<String, dynamic>> getWithdrawals() async {
     if (!backendEnabled) return <String, dynamic>{};
     await _ensureTokenLoaded();
-    final response = await http.get(
-      Uri.parse('$_baseUrl/wallet/withdraws'),
-      headers: _headers(),
-    );
-    return _handleResponse(response);
+    final response = await _dio.get('/wallet/withdraws');
+    return response.data as Map<String, dynamic>;
   }
 
   /// Top up the wallet via the Kashier payment gateway.
@@ -272,12 +375,11 @@ class ApiService {
   /// when the top-up is applied directly.
   Future<Map<String, dynamic>> topUpWallet({required double amount}) async {
     if (!backendEnabled) return <String, dynamic>{};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/wallet/top-up'),
-      headers: _headers(),
-      body: jsonEncode({'amount': amount, 'paymentMethod': 'card'}),
+    final response = await _dio.post(
+      '/wallet/top-up',
+      data: {'amount': amount, 'paymentMethod': 'card'},
     );
-    return _handleResponse(response);
+    return response.data as Map<String, dynamic>;
   }
 
   /// Initiate a Kashier payment session for wallet top-up.
@@ -290,12 +392,11 @@ class ApiService {
   }) async {
     if (!backendEnabled) return <String, dynamic>{};
     await _ensureTokenLoaded();
-    final response = await http.post(
-      Uri.parse('$_baseUrl/wallet/initiate-payment'),
-      headers: _headers(),
-      body: jsonEncode({'amount': amount, 'paymentMethod': paymentMethod}),
+    final response = await _dio.post(
+      '/wallet/top-up',
+      data: {'amount': amount, 'paymentMethod': paymentMethod},
     );
-    return _handleResponse(response);
+    return response.data as Map<String, dynamic>;
   }
 
   // ── Driver Endpoints ─────────────────────────────────
@@ -303,39 +404,34 @@ class ApiService {
   /// Update driver location
   Future<Map<String, dynamic>> updateLocation(double lat, double lng) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.put(
-      Uri.parse('$_baseUrl/driver/location'),
-      headers: _headers(),
-      body: jsonEncode({'lat': lat, 'lng': lng}),
+    final response = await _dio.put(
+      '/driver/location',
+      data: {'lat': lat, 'lng': lng},
     );
-    return _handleResponse(response);
+    return response.data as Map<String, dynamic>;
   }
 
   /// Get available rides nearby
   Future<Map<String, dynamic>> getAvailableRides() async {
     if (!backendEnabled) return <String, dynamic>{};
-    final response = await http.get(
-      Uri.parse('$_baseUrl/driver/available-rides'),
-      headers: _headers(),
-    );
-    return _handleResponse(response);
+    final response = await _dio.get('/driver/available-rides');
+    return response.data as Map<String, dynamic>;
   }
 
   /// قبول طلب رحلة (POST). تُرجع true عند النجاح، false عند الفشل.
   Future<bool> acceptRide(String rideId) async {
     if (!backendEnabled) return true;
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/driver/accept-ride/$rideId'),
-        headers: _headers(),
+      await _dio.post('/driver/accept-ride/$rideId');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'acceptRide failed: ${e.response?.statusCode} ${e.response?.data}',
       );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      }
-      debugPrint('acceptRide failed: ${response.statusCode} ${response.body}');
       return false;
     } catch (e) {
-      debugPrint('acceptRide error: $e');
+      logError('ApiService', 'acceptRide error: $e', e);
       return false;
     }
   }
@@ -344,17 +440,16 @@ class ApiService {
   Future<bool> startRide(String rideId) async {
     if (!backendEnabled) return true;
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/driver/ride/start/$rideId'),
-        headers: _headers(),
+      await _dio.put('/driver/ride/start/$rideId');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'startRide failed: ${e.response?.statusCode} ${e.response?.data}',
       );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      }
-      debugPrint('startRide failed: ${response.statusCode} ${response.body}');
       return false;
     } catch (e) {
-      debugPrint('startRide error: $e');
+      logError('ApiService', 'startRide error: $e', e);
       return false;
     }
   }
@@ -363,19 +458,16 @@ class ApiService {
   Future<bool> completeRide(String rideId) async {
     if (!backendEnabled) return true;
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/driver/ride/complete/$rideId'),
-        headers: _headers(),
-      );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      }
-      debugPrint(
-        'completeRide failed: ${response.statusCode} ${response.body}',
+      await _dio.put('/driver/ride/complete/$rideId');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'completeRide failed: ${e.response?.statusCode} ${e.response?.data}',
       );
       return false;
     } catch (e) {
-      debugPrint('completeRide error: $e');
+      logError('ApiService', 'completeRide error: $e', e);
       return false;
     }
   }
@@ -384,17 +476,16 @@ class ApiService {
   Future<bool> arriveRide(String rideId) async {
     if (!backendEnabled) return true;
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/driver/ride/arrive/$rideId'),
-        headers: _headers(),
+      await _dio.put('/driver/ride/arrive/$rideId');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'arriveRide failed: ${e.response?.statusCode} ${e.response?.data}',
       );
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      }
-      debugPrint('arriveRide failed: ${response.statusCode} ${response.body}');
       return false;
     } catch (e) {
-      debugPrint('arriveRide error: $e');
+      logError('ApiService', 'arriveRide error: $e', e);
       return false;
     }
   }
@@ -404,40 +495,23 @@ class ApiService {
   /// تُرجع true عند النجاح، false عند الفشل.
   Future<bool> toggleAvailability(bool isAvailable) async {
     if (!backendEnabled) return true;
-    // Ensure the JWT is present in memory (restores from local storage on
-    // cold start) so the Authorization header is always sent. Without this,
-    // the request can go out unauthenticated and the backend returns 401,
-    // which surfaces as "تعذر مزامنة حالة التوافر مع السيرفر".
     await _ensureTokenLoaded();
 
-    final url = '$_baseUrl/driver/toggle-availability';
-    final headers = _headers();
-    final tokenPresent = headers['Authorization'] != null;
-    debugPrint('[toggleAvailability] → POST $url');
-    debugPrint('[toggleAvailability] → isAvailable: $isAvailable');
-    debugPrint('[toggleAvailability] → token present: $tokenPresent');
-    debugPrint(
-      '[toggleAvailability] → Authorization header: '
-      '${tokenPresent ? headers['Authorization']!.substring(0, 20) + '…' : 'NULL'}',
-    );
+    logFine('ApiService', '[toggleAvailability] → isAvailable: $isAvailable');
+    logFine('ApiService', '[toggleAvailability] → token present: $hasToken');
 
     try {
-      final response = await http.post(
-        Uri.parse(url),
-        headers: headers,
-        body: jsonEncode({'isAvailable': isAvailable}),
+      await _dio.post(
+        '/driver/toggle-availability',
+        data: {'isAvailable': isAvailable},
       );
-      debugPrint('[toggleAvailability] ← status: ${response.statusCode}');
-      debugPrint('[toggleAvailability] ← body: ${response.body}');
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      }
-      debugPrint(
-        'toggleAvailability failed: ${response.statusCode} ${response.body}',
-      );
+      logFine('ApiService', '[toggleAvailability] ✅ success');
+      return true;
+    } on DioException catch (e) {
+      logWarning('ApiService', '[toggleAvailability] DioException: $e');
       return false;
     } catch (e) {
-      debugPrint('AVAILABILITY TOGGLE ERROR: $e');
+      logError('ApiService', 'AVAILABILITY TOGGLE ERROR: $e', e);
       return false;
     }
   }
@@ -445,28 +519,23 @@ class ApiService {
   /// Get earnings summary for the given [period] (daily | weekly | monthly).
   Future<Map<String, dynamic>> getEarnings({required String period}) async {
     if (!backendEnabled) return <String, dynamic>{};
-    final response = await http.get(
-      Uri.parse('$_baseUrl/driver/earnings?period=$period'),
-      headers: _headers(),
+    final response = await _dio.get(
+      '/driver/earnings',
+      queryParameters: {'period': period},
     );
-    return _handleResponse(response);
+    return response.data as Map<String, dynamic>;
   }
 
   /// جلب سجل رحلات الكابتن من الباك إند.
   ///
-  /// يُرسل طلب GET إلى `/driver/rides/history` مع توكن الكابتن في الـ Header.
+  /// يُرسل طلب GET إلى `/rides/history` مع توكن الكابتن في الـ Header.
   /// تُرجع [List<RideModel>]؛ وفي حالة الفشل تُرجع قائمة فارغة لتجنب كسر التطبيق.
   Future<List<RideModel>> getRideHistory() async {
     if (!backendEnabled) return <RideModel>[];
     await _ensureTokenLoaded();
     try {
-      // Correct backend route (verified: /driver/rides/history → 404,
-      // /rides/history → 401, i.e. exists and requires auth).
-      final response = await http.get(
-        Uri.parse('$_baseUrl/rides/history'),
-        headers: _headers(),
-      );
-      final body = await _handleResponse(response);
+      final response = await _dio.get('/rides/history');
+      final body = response.data as Map<String, dynamic>;
       final List<dynamic>? raw =
           body['rides'] as List<dynamic>? ?? body['data'] as List<dynamic>?;
       if (raw == null) return <RideModel>[];
@@ -475,7 +544,7 @@ class ApiService {
           .map((json) => RideModel.fromJson(json))
           .toList();
     } catch (e) {
-      debugPrint('getRideHistory error: $e');
+      logError('ApiService', 'getRideHistory error: $e', e);
       return <RideModel>[];
     }
   }
@@ -485,11 +554,8 @@ class ApiService {
   /// Get user profile
   Future<Map<String, dynamic>> getProfile() async {
     if (!backendEnabled) return <String, dynamic>{};
-    final response = await http.get(
-      Uri.parse('$_baseUrl/user/profile'),
-      headers: _headers(),
-    );
-    return _handleResponse(response);
+    final response = await _dio.get('/user/profile');
+    return response.data as Map<String, dynamic>;
   }
 
   /// Update user profile
@@ -499,47 +565,49 @@ class ApiService {
     String? avatarUrl,
   }) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.put(
-      Uri.parse('$_baseUrl/user/profile/update'),
-      headers: _headers(),
-      body: jsonEncode({
+    final response = await _dio.put(
+      '/user/profile/update',
+      data: {
         if (firstName != null) 'firstName': firstName,
         if (lastName != null) 'lastName': lastName,
         if (avatarUrl != null) 'avatarUrl': avatarUrl,
-      }),
+      },
     );
-    return _handleResponse(response);
+    return response.data as Map<String, dynamic>;
   }
 
   /// Get the driver's ratings summary + list of individual ratings.
+  ///
+  /// Uses `/user/ratings/{userId}` (the only ratings endpoint available on the
+  /// deployed backend). Requires the JWT to have been loaded first so the
+  /// `userId` claim can be extracted from the token payload.
   Future<Map<String, dynamic>> getDriverRatings() async {
     if (!backendEnabled) return <String, dynamic>{};
-    final response = await http.get(
-      Uri.parse('$_baseUrl/driver/ratings'),
-      headers: _headers(),
-    );
-    return _handleResponse(response);
+    await _ensureTokenLoaded();
+    final uid = userId;
+    if (uid == null) {
+      logWarning(
+        'ApiService',
+        'getDriverRatings — userId is null, token may be missing',
+      );
+      return <String, dynamic>{};
+    }
+    final response = await _dio.get('/user/ratings/$uid');
+    return response.data as Map<String, dynamic>;
   }
 
   /// Send a support chat message (sender = USER) and return the saved message.
   Future<Map<String, dynamic>> sendSupportMessage(String text) async {
     if (!backendEnabled) return <String, dynamic>{};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/support/messages'),
-      headers: _headers(),
-      body: jsonEncode({'text': text}),
-    );
-    return _handleResponse(response);
+    final response = await _dio.post('/support/messages', data: {'text': text});
+    return response.data as Map<String, dynamic>;
   }
 
   /// Get the current user's full support conversation.
   Future<Map<String, dynamic>> getSupportMessages() async {
     if (!backendEnabled) return <String, dynamic>{};
-    final response = await http.get(
-      Uri.parse('$_baseUrl/support/messages'),
-      headers: _headers(),
-    );
-    return _handleResponse(response);
+    final response = await _dio.get('/support/messages');
+    return response.data as Map<String, dynamic>;
   }
 
   /// Rate a user
@@ -550,27 +618,15 @@ class ApiService {
     String? comment,
   }) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await http.post(
-      Uri.parse('$_baseUrl/rate'),
-      headers: _headers(),
-      body: jsonEncode({
+    final response = await _dio.post(
+      '/rate',
+      data: {
         'rideId': rideId,
         'toUserId': toUserId,
         'rating': rating,
         if (comment != null) 'comment': comment,
-      }),
+      },
     );
-    return _handleResponse(response);
+    return response.data as Map<String, dynamic>;
   }
-}
-
-/// Exception thrown when an API request fails.
-class ApiException implements Exception {
-  final String message;
-  final int statusCode;
-
-  const ApiException({required this.message, required this.statusCode});
-
-  @override
-  String toString() => 'ApiException($statusCode): $message';
 }

@@ -9,12 +9,14 @@ import 'package:kashier_flutter_sdk/kashier_flutter_sdk.dart';
 
 import 'package:waslny_captain/firebase_options.dart';
 import 'package:waslny_captain/core/navigation.dart';
+import 'package:waslny_captain/core/network/dio_client.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/kashier_service.dart';
 import 'package:waslny_captain/core/services/notification_service.dart';
 import 'package:waslny_captain/core/services/settings_service.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
+import 'package:waslny_captain/core/utils/logger.dart';
 import 'package:waslny_captain/features/home/home_screen.dart';
 import 'package:waslny_captain/features/auth/login_screen.dart';
 
@@ -80,6 +82,7 @@ class _SplashScreenState extends State<SplashScreen>
     tasks.add(_timed('ErrorWidget', _initErrorWidget()));
     tasks.add(_timed('Settings', SettingsService.instance.initialize()));
     tasks.add(_timed('AuthToken', ApiService.instance.loadToken()));
+    tasks.add(_timed('DioClient', Future(() => DioClient.instance.init())));
     tasks.add(_timed('Notifications', _initNotificationService()));
 
     if (!kIsWeb) {
@@ -97,27 +100,30 @@ class _SplashScreenState extends State<SplashScreen>
   /// tasks – we simply log and continue so the splash screen can proceed.
   Future<void> _timed(String name, Future<void> future) async {
     final stopwatch = Stopwatch()..start();
-    // ignore: avoid_print
-    print('[init] $name ▶ started');
+    logInfo('SplashScreen', '[init] $name ▶ started');
     try {
       await future.timeout(
         const Duration(seconds: 8),
         onTimeout: () {
-          // ignore: avoid_print
-          print(
-            '[init] $name ⏱ TIMEOUT after ${stopwatch.elapsed.inMilliseconds}ms',
+          logWarning(
+            'SplashScreen',
+            '[init] $name ⏱ TIMEOUT after '
+                '${stopwatch.elapsed.inMilliseconds}ms',
           );
         },
       );
-      // ignore: avoid_print
-      print('[init] $name ✔ done in ${stopwatch.elapsed.inMilliseconds}ms');
-    } catch (e, stack) {
-      // ignore: avoid_print
-      print(
-        '[init] $name ❌ error after ${stopwatch.elapsed.inMilliseconds}ms: $e',
+      logInfo(
+        'SplashScreen',
+        '[init] $name ✔ done in ${stopwatch.elapsed.inMilliseconds}ms',
       );
-      // ignore: avoid_print
-      print(stack);
+    } catch (e, stack) {
+      logError(
+        'SplashScreen',
+        '[init] $name ❌ error after '
+            '${stopwatch.elapsed.inMilliseconds}ms: $e',
+        e,
+        stack,
+      );
     } finally {
       stopwatch.stop();
     }

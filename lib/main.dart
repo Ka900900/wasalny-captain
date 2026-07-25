@@ -7,6 +7,7 @@ import 'package:waslny_captain/core/services/notification_service.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
 import 'package:waslny_captain/core/services/settings_service.dart';
 import 'package:waslny_captain/core/widgets/route_transitions.dart';
+import 'package:waslny_captain/core/utils/logger.dart';
 import 'package:waslny_captain/features/auth/login_screen.dart';
 import 'package:waslny_captain/features/auth/registration_screen.dart';
 import 'package:waslny_captain/features/auth/vehicle_info_screen.dart';
@@ -22,6 +23,7 @@ import 'package:waslny_captain/features/safety/safety_screen.dart';
 /// and the user sees a smooth branded experience while the app warms up.
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  setupLogging();
   // Register the top‑level FCM background handler as early as possible so it
   // is available even if the app is launched from a notification while killed.
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -81,12 +83,35 @@ class _MyAppState extends State<MyApp> {
       case '/login':
         return RouteTransitions.slideUp(const LoginScreen());
       case '/registration':
-        final phoneNumber = settings.arguments as String?;
-        return RouteTransitions.slideUp(
-          RegistrationScreen(phoneNumber: phoneNumber),
-        );
+        late final RegistrationScreen registrationScreen;
+        final args = settings.arguments;
+        if (args is Map) {
+          registrationScreen = RegistrationScreen(
+            phoneNumber: args['phoneNumber'] as String?,
+            googleName: args['name'] as String?,
+            googleEmail: args['email'] as String?,
+            googlePhotoUrl: args['photoUrl'] as String?,
+          );
+        } else {
+          registrationScreen = RegistrationScreen(
+            phoneNumber: args as String?,
+          );
+        }
+        return RouteTransitions.slideUp(registrationScreen);
       case '/vehicle-info':
-        return RouteTransitions.slideUp(const VehicleInfoScreen());
+        late final VehicleInfoScreen vehicleInfoScreen;
+        final vArgs = settings.arguments;
+        if (vArgs is Map) {
+          vehicleInfoScreen = VehicleInfoScreen(
+            phoneNumber: vArgs['phoneNumber'] as String?,
+            googleName: vArgs['name'] as String?,
+            googleEmail: vArgs['email'] as String?,
+            googlePhotoUrl: vArgs['photoUrl'] as String?,
+          );
+        } else {
+          vehicleInfoScreen = const VehicleInfoScreen();
+        }
+        return RouteTransitions.slideUp(vehicleInfoScreen);
       case '/home':
         return RouteTransitions.slideHorizontal(const CaptainHomeScreen());
       case '/notifications':

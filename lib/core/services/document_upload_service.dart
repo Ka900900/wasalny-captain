@@ -15,6 +15,7 @@ enum UploadDocType {
   idFront('id-front'),
   idBack('id-back'),
   license('license'),
+  licenseBack('license-back'),
   face('face'),
   car('car'),
   profile('profile'),

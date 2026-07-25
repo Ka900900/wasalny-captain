@@ -15,16 +15,22 @@ model Captain {
   firebaseUid      String   @unique
   phone            String?  @unique
   name             String?
+  email            String?
   nationalId       String?
+  role             String?  @default("DRIVER")
   vehicleType      String?
   vehicleModel     String?
   vehicleColor     String?
   vehicleNumber    String?
+  licenseNumber    String?
+  fcmToken         String?
 
   // ── Image URLs (populated by the upload endpoints) ──
   photoUrl         String?
   licenseUrl       String?
+  licenseBackUrl   String?
   idCardUrl        String?
+  idCardBackUrl    String?
   carPhotoUrl      String?
   insuranceUrl     String?
   criminalRecordUrl String?
@@ -33,10 +39,24 @@ model Captain {
   // ── Cloudinary public_ids (so we can delete/replace later) ──
   photoPublicId    String?
   licensePublicId  String?
+  licenseBackPublicId String?
   idCardPublicId   String?
+  idCardBackPublicId String?
   carPhotoPublicId String?
   insurancePublicId String?
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+/// دعم المحادثة — رسائل بين الكابتن و فريق الدعم.
+///
+/// TEMPORARY: النموذج الحالي بسيط (نص فقط). يتم توسيعه حسب الحاجة
+/// (مثلاً إضافة isRead, attachments, إلخ).
+model Message {
+  id        String   @id @default(cuid())
+  userId    String
+  text      String
+  sender    String   @default("USER") // "USER" أو "ADMIN"
+  createdAt DateTime @default(now())
 }

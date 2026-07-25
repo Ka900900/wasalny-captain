@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
 import 'package:waslny_captain/core/models/wallet_models.dart';
 import 'package:waslny_captain/core/repositories/wallet_repository.dart';
+import 'package:waslny_captain/core/network/api_exceptions.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/features/earnings/earnings_screen.dart';

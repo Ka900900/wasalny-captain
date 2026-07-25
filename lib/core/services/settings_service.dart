@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:waslny_captain/core/services/notification_service.dart';
+import 'package:waslny_captain/core/utils/logger.dart';
 
 class SettingsService extends ChangeNotifier {
   SettingsService._();
@@ -23,8 +24,7 @@ class SettingsService extends ChangeNotifier {
       themeMode = _themeModeFromString(storedTheme) ?? ThemeMode.dark;
       notificationsEnabled = prefs.getBool(_notificationsKey) ?? true;
     } catch (e) {
-      // ignore: avoid_print
-      print('[SettingsService] initialize failed/timed out: $e');
+      logError('SettingsService', 'initialize failed/timed out: $e', e);
       themeMode = ThemeMode.dark;
       notificationsEnabled = true;
     }

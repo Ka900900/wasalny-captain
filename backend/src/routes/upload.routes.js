@@ -111,10 +111,22 @@ router.post(
   makeUploadHandler('licenses', 'licenseUrl', 'licensePublicId'),
 );
 router.post(
+  '/license-back',
+  requireAuth,
+  uploadSingleImage,
+  makeUploadHandler('licenses_back', 'licenseBackUrl', 'licenseBackPublicId'),
+);
+router.post(
   '/id-card',
   requireAuth,
   uploadSingleImage,
   makeUploadHandler('id_cards', 'idCardUrl', 'idCardPublicId'),
+);
+router.post(
+  '/id-back',
+  requireAuth,
+  uploadSingleImage,
+  makeUploadHandler('id_cards_back', 'idCardBackUrl', 'idCardBackPublicId'),
 );
 router.post(
   '/car',

@@ -21,9 +21,10 @@ class DocumentOverlayPainter extends CustomPainter {
     final paint = Paint()..color = maskColor;
     final fullRect = Offset.zero & size;
 
-    // The cut‑out rectangle ≈ 85 % width, 45 % height, centred
-    final cutWidth = size.width * 0.85;
-    final cutHeight = size.height * 0.45;
+    // Egyptian ID card ratio (ID-1): 85.6mm × 53.98mm ≈ 1.586:1
+    final double idCardRatio = 1.586;
+    final cutWidth = size.width * 0.80;
+    final cutHeight = cutWidth / idCardRatio;
     final cutRect = RRect.fromRectAndRadius(
       Rect.fromCenter(
         center: Offset(size.width / 2, size.height / 2),
