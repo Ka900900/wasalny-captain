@@ -4,6 +4,7 @@
  * Provides:
  *   POST /api/v1/auth/firebase-login      — Exchange Firebase ID Token → App JWT
  *   POST /api/v1/auth/register-driver      — Register/update driver vehicle info
+ *   POST /api/v1/auth/update-phone         — Update captain phone number
  *   POST /api/v1/auth/register-fcm-token   — Save FCM token for push notifications
  *
  * @see Flutter ApiService.registerDriver()
@@ -281,6 +282,43 @@ router.post('/register-driver', requireAuth, async (req, res) => {
       });
     }
 
+    // ── Validate phone number (reject firebase: placeholder) ──────
+    if (phoneNumber && phoneNumber.startsWith('firebase:')) {
+      console.log('[AUTH] ❌ 400 — Phone number is a firebase placeholder');
+      return res.status(400).json({
+        success: false,
+        error: 'يجب إدخال رقم هاتف حقيقي. الرقم المحدد ليس رقم هاتف صالح.',
+        code: 'INVALID_PHONE_PLACEHOLDER',
+      });
+    }
+
+    // ── Validate phone format if provided ─────────────────────────
+    if (phoneNumber && phoneNumber.trim().length > 0) {
+      // Strip spaces and dashes for validation
+      const cleanPhone = phoneNumber.replace(/[\s\-]/g, '');
+      if (!/^\+?\d{8,15}$/.test(cleanPhone)) {
+        console.log(`[AUTH] ❌ 400 — Invalid phone format: "${phoneNumber}"`);
+        return res.status(400).json({
+          success: false,
+          error: 'صيغة رقم الهاتف غير صحيحة. يجب أن يبدأ بـ + متبوعاً بأرقام.',
+          code: 'INVALID_PHONE_FORMAT',
+        });
+      }
+    }
+
+    // ── Check if Captain already fully registered for this account ─
+    const existingCaptain = await prisma.captain.findUnique({
+      where: { firebaseUid },
+      select: { id: true, vehicleType: true, vehicleModel: true, phone: true },
+    });
+
+    if (existingCaptain && existingCaptain.vehicleType && existingCaptain.vehicleModel) {
+      console.log(`[AUTH] ⚠️ 409 — Captain already registered for this account (id=${existingCaptain.id})`);
+      console.log('[AUTH]   Proceeding with update (upsert)...');
+      // Not returning error — upsert will handle the update.
+      // But log it so we can track re-registration attempts.
+    }
+
     // ── Map Flutter field names → Prisma field names ──────────────
     const updateData = {
       // Vehicle fields (mapped from Flutter camelCase → Prisma camelCase)
@@ -375,14 +413,29 @@ router.post('/register-driver', requireAuth, async (req, res) => {
     if (err.code) {
       console.error(`[AUTH] ❌ Prisma error code: ${err.code}`);
       switch (err.code) {
-        case 'P2002':
+        case 'P2002': {
           console.error('[AUTH]   Unique constraint violation');
-          console.error(`[AUTH]   Field: ${err.meta?.target || 'unknown'}`);
+          const targetField = err.meta?.target || 'unknown';
+          console.error(`[AUTH]   Field: ${targetField}`);
+
+          // Provide specific Arabic error message based on the violated field
+          let message;
+          if (targetField.includes('firebaseUid')) {
+            message = 'بيانات السائق مسجلة بالفعل لهذا الحساب';
+          } else if (targetField.includes('phone')) {
+            message = 'رقم الهاتف مسجل بالفعل لحساب آخر. يرجى استخدام رقم هاتف آخر.';
+          } else {
+            message = `يوجد سجل مسجل مسبقاً بهذا البيانات (${targetField})`;
+          }
+
           return res.status(409).json({
             success: false,
-            error: `A record with this ${err.meta?.target || 'field'} already exists`,
+            error: message,
+            code: 'DUPLICATE_RECORD',
+            field: targetField,
             prismaCode: 'P2002',
           });
+        }
         case 'P2003':
           console.error('[AUTH]   Foreign key constraint violation');
           return res.status(400).json({
@@ -408,6 +461,105 @@ router.post('/register-driver', requireAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Internal server error during driver registration',
+      details: err.message,
+    });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// POST /update-phone
+// ═════════════════════════════════════════════════════════════════════════════
+// Updates the captain's phone number.
+// Called when a Google sign-in user needs to provide a real phone number.
+//
+// Body: { phoneNumber: string }
+// ═════════════════════════════════════════════════════════════════════════════
+
+router.post('/update-phone', requireAuth, async (req, res) => {
+  try {
+    const firebaseUid = req.user.userId || req.user.uid;
+    const { phoneNumber } = req.body;
+
+    console.log('[AUTH] ─── POST /update-phone ─────────────────────────');
+    console.log(`[AUTH]   firebaseUid: ${firebaseUid}`);
+    console.log(`[AUTH]   phoneNumber: ${phoneNumber || '(none)'}`);
+
+    if (!firebaseUid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: no user ID in token',
+      });
+    }
+
+    if (!phoneNumber || phoneNumber.trim().isEmpty) {
+      return res.status(400).json({
+        success: false,
+        error: 'يجب إدخال رقم الهاتف',
+        code: 'PHONE_REQUIRED',
+      });
+    }
+
+    // Reject firebase: placeholder
+    if (phoneNumber.startsWith('firebase:')) {
+      return res.status(400).json({
+        success: false,
+        error: 'يجب إدخال رقم هاتف حقيقي. الرقم المحدد ليس رقم هاتف صالح.',
+        code: 'INVALID_PHONE_PLACEHOLDER',
+      });
+    }
+
+    // Validate phone format
+    const cleanPhone = phoneNumber.replace(/[\s\-]/g, '');
+    if (!/^\+?\d{8,15}$/.test(cleanPhone)) {
+      console.log(`[AUTH] ❌ 400 — Invalid phone format: "${phoneNumber}"`);
+      return res.status(400).json({
+        success: false,
+        error: 'صيغة رقم الهاتف غير صحيحة. يجب أن يبدأ بـ + متبوعاً بأرقام.',
+        code: 'INVALID_PHONE_FORMAT',
+      });
+    }
+
+    // Check if this phone number is already used by another captain
+    const phoneOwner = await prisma.captain.findFirst({
+      where: {
+        phone: phoneNumber,
+        firebaseUid: { not: firebaseUid },
+      },
+      select: { id: true },
+    });
+
+    if (phoneOwner) {
+      return res.status(409).json({
+        success: false,
+        error: 'رقم الهاتف مسجل بالفعل لحساب آخر. يرجى استخدام رقم هاتف آخر.',
+        code: 'PHONE_ALREADY_USED',
+      });
+    }
+
+    // Update phone number
+    const captain = await prisma.captain.update({
+      where: { firebaseUid },
+      data: {
+        phone: phoneNumber,
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(`[AUTH] ✅ Phone updated successfully: ${captain.id}`);
+    console.log('[AUTH] ────────────────────────────────────────────────');
+
+    return res.status(200).json({
+      success: true,
+      message: 'تم تحديث رقم الهاتف بنجاح',
+      phone: captain.phone,
+    });
+  } catch (err) {
+    console.error('[AUTH] ❌ POST /update-phone — UNHANDLED ERROR');
+    console.error('[AUTH]   Error:', err.message);
+    console.error('[AUTH]   Stack:', err.stack);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error during phone update',
       details: err.message,
     });
   }

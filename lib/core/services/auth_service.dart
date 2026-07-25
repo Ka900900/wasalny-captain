@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:waslny_captain/core/network/api_exceptions.dart';
@@ -262,6 +262,11 @@ class AuthService {
           );
         }
 
+        // ── DEBUG: طباعة قيم Google Profile الفعلية ──
+        debugPrint(
+          'GOOGLE_SIGNIN_DEBUG: displayName=${user.displayName}, photoURL=${user.photoURL}, email=${user.email}',
+        );
+
         // 4. Get the Firebase ID Token
         final firebaseToken2 = await user.getIdToken(true);
         if (firebaseToken2 == null || firebaseToken2.isEmpty) {
@@ -282,7 +287,7 @@ class AuthService {
       // ==========================================
       // Exchange Firebase Token → Backend JWT
       // ==========================================
-      final jwt = await loginWithBackend(
+      final loginResult = await loginWithBackend(
         idToken,
         name: displayName,
         email: email,
@@ -298,11 +303,13 @@ class AuthService {
       });
 
       return {
-        'token': jwt,
+        'token': loginResult['token'],
         'firebaseToken': idToken,
         'displayName': displayName,
         'email': email,
         'photoUrl': photoUrl,
+        // Include backend captain data (phone, etc.)
+        if (loginResult['captain'] != null) 'captain': loginResult['captain'],
         'message': 'تم تسجيل الدخول بنجاح',
       };
     } on FirebaseAuthException {
@@ -334,8 +341,12 @@ class AuthService {
   /// subsequent API requests.
   Future<Map<String, dynamic>> exchangeFirebaseTokenForAppJWT() async {
     final firebaseToken = await getIdToken(forceRefresh: true);
-    final jwt = await loginWithBackend(firebaseToken);
-    return {'token': jwt, 'message': 'تم تسجيل الدخول بنجاح'};
+    final result = await loginWithBackend(firebaseToken);
+    return {
+      'token': result['token'],
+      'message': 'تم تسجيل الدخول بنجاح',
+      if (result['captain'] != null) 'captain': result['captain'],
+    };
   }
 
   /// Exchanges the Firebase ID Token with the Node.js backend and returns the
@@ -344,14 +355,14 @@ class AuthService {
   /// Optionally accepts Google profile data (`name`, `email`, `photoUrl`) that
   /// will be forwarded to the backend so the `User` record stays in sync with
   /// the Google account (name, email, profile photo).
-  Future<String> loginWithBackend(
+  Future<Map<String, dynamic>> loginWithBackend(
     String firebaseToken, {
     String? name,
     String? email,
     String? photoUrl,
   }) async {
     // Backend disabled → run on Firebase only (no custom JWT exchange).
-    if (!ApiService.backendEnabled) return '';
+    if (!ApiService.backendEnabled) return {'token': ''};
     try {
       final response = await http.post(
         Uri.parse('$_backendBaseUrl/auth/firebase-login'),
@@ -390,14 +401,14 @@ class AuthService {
       }
 
       ApiService.instance.saveToken(jwt);
-      // Debug: تم أخذ JWT بنجاح في 23 يوليو 2026
 
       // Register the FCM token with the backend so the server can send this
       // captain real ride-alert push notifications. Fire-and-forget: failures
       // are logged inside the service and must not break the login flow.
       unawaited(NotificationService.instance.registerTokenWithBackend());
 
-      return jwt;
+      // Return full body so callers can inspect captain data (e.g. phone)
+      return body;
     } on ApiException {
       rethrow;
     } catch (exception) {

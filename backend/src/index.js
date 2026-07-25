@@ -19,7 +19,7 @@ app.get('/', (req, res) => {
 });
 
 // ── Route mounting ──────────────────────────────────────────────────────────
-app.use('/api/v1/auth', authRoutes);             // firebase-login, register-driver, register-fcm-token
+app.use('/api/v1/auth', authRoutes);             // firebase-login, register-driver, update-phone, register-fcm-token
 app.use('/api/v1/driver', driverRoutes);         // earnings, location, rides, availability
 app.use('/api/v1/user', userRoutes);             // profile, ratings
 app.use('/api/v1/upload', uploadRoutes);         // image uploads (profile, license, id-card, car, etc.)

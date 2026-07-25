@@ -654,6 +654,11 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         throw Exception('رقم الهاتف غير متوفر للتسجيل');
       }
 
+      // ── Validate phone doesn't contain firebase: placeholder ──
+      if (phone.startsWith('firebase:')) {
+        throw Exception('رقم الهاتف غير صالح. يرجى إدخال رقم هاتف حقيقي.');
+      }
+
       // ── التحقق من الحقول المطلوبة قبل إرسال الـ API ──────────
       if (_selectedModel == null || _selectedModel!.trim().isEmpty) {
         if (mounted) {

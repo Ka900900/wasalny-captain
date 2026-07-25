@@ -740,23 +740,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         // ── 2. Offline gradient scrim ─────────────────────
         if (!_isOnline) _buildOfflineScrim(),
 
-        // ── 2b. Bottom Online/Offline control (single source of truth) ──
-        // Shown only when no ride-request / trip card is occupying the
-        // bottom area, so the two never overlap.
-        if (_currentRideRequest == null)
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 96,
-            child: OnlineToggleButton(
-              isOnline: _isOnline,
-              hasActiveTrip: _activeTripId != null,
-              isLoading: _isToggling,
-              onToggle: (newValue) => _toggleOnlineStatus(),
-            ),
-          ),
-
-        // ── 3. Floating top action: notifications ──
+        // ── 3. Floating top row: notifications + online toggle ──
         Positioned(
           top: 48,
           left: 16,
@@ -764,7 +748,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // جرس الإشعارات (يسار حسب اتجاه RTL)
+              // جرس الإشعارات (يمين حسب اتجاه RTL)
               _buildFloatingActionButton(
                 icon: Icons.notifications_outlined,
                 label: 'الإشعارات',
@@ -773,6 +757,14 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                   RouteTransitions.slideUp(const NotificationsScreen()),
                 ),
               ),
+              // زر الأونلاين / الأوفلاين (يسار حسب اتجاه RTL)
+              if (_currentRideRequest == null)
+                OnlineToggleButton(
+                  isOnline: _isOnline,
+                  hasActiveTrip: _activeTripId != null,
+                  isLoading: _isToggling,
+                  onToggle: (newValue) => _toggleOnlineStatus(),
+                ),
             ],
           ),
         ),

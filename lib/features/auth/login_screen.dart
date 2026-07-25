@@ -67,24 +67,57 @@ class _LoginScreenState extends State<LoginScreen>
       final email = result['email'] as String? ?? '';
       final photoUrl = result['photoUrl'] as String? ?? '';
 
+      // 2b. Check backend phone — if it's a "firebase:" placeholder, the user
+      //     needs to provide a real phone number before continuing.
+      final captain = result['captain'] as Map<String, dynamic>?;
+      final backendPhone = captain?['phone'] as String?;
+      final needsPhoneEntry =
+          backendPhone == null ||
+          backendPhone.isEmpty ||
+          backendPhone.startsWith('firebase:');
+
       // 3. Check if driver is registered on the backend → Onboarding or Home
       final isRegistered = await ApiService.instance.isDriverRegistered();
       if (mounted) {
-        if (isRegistered) {
-          // Existing user – go to Home
+        if (isRegistered && !needsPhoneEntry) {
+          // Existing user with real phone – go to Home
           Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+        } else if (isRegistered && needsPhoneEntry) {
+          // Registered but has placeholder phone – prompt for real phone
+          final realPhone = await _showPhoneEntryDialog();
+          if (realPhone != null && realPhone.isNotEmpty && mounted) {
+            await ApiService.instance.updatePhoneNumber(phoneNumber: realPhone);
+            Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+          }
         } else {
           // First login – go to onboarding with Google data pre‑filled
-          Navigator.pushReplacementNamed(
-            context,
-            '/vehicle-info',
-            arguments: <String, dynamic>{
-              'name': displayName,
-              'email': email,
-              'photoUrl': photoUrl,
-              'phoneNumber': null,
-            },
-          );
+          String? phoneForRegistration;
+          if (!needsPhoneEntry) {
+            phoneForRegistration = backendPhone;
+          } else {
+            // Prompt for real phone before vehicle-info
+            final realPhone = await _showPhoneEntryDialog();
+            if (realPhone == null || realPhone.isEmpty) {
+              // User cancelled phone entry
+              if (mounted) setState(() => _isLoading = false);
+              return;
+            }
+            phoneForRegistration = realPhone;
+            // Update phone on backend
+            await ApiService.instance.updatePhoneNumber(phoneNumber: realPhone);
+          }
+          if (mounted) {
+            Navigator.pushReplacementNamed(
+              context,
+              '/vehicle-info',
+              arguments: <String, dynamic>{
+                'name': displayName,
+                'email': email,
+                'photoUrl': photoUrl,
+                'phoneNumber': phoneForRegistration,
+              },
+            );
+          }
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -122,6 +155,67 @@ class _LoginScreenState extends State<LoginScreen>
       }
     }
     return error.toString();
+  }
+
+  /// Shows a dialog asking the user to enter their real phone number.
+  /// Returns the phone number string if confirmed, or null if cancelled.
+  Future<String?> _showPhoneEntryDialog() async {
+    final phoneController = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('رقم الهاتف'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'يجب إدخال رقم هاتف حقيقي لإتمام التسجيل.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  hintText: '+212 6XX XX XX XX',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.phone),
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final phone = phoneController.text.trim();
+                if (phone.isEmpty) return;
+                // Basic validation: must start with + and have 8-15 digits
+                final clean = phone.replaceAll(RegExp(r'[\s\-]'), '');
+                if (!RegExp(r'^\+?\d{8,15}$').hasMatch(clean)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('صيغة رقم الهاتف غير صحيحة'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(context).pop(phone);
+              },
+              child: const Text('تأكيد'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showError(String message) {

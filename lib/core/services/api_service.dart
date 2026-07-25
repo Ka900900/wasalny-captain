@@ -295,6 +295,52 @@ class ApiService {
     return null;
   }
 
+  /// يستخرج رمز الخطأ (code) من رد الباك إند.
+  String? _extractBackendCode(DioException e) {
+    try {
+      final data = e.response?.data;
+      if (data is Map) {
+        return data['code'] as String?;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Updates the captain's phone number on the backend.
+  ///
+  /// Called when a Google sign-in user needs to provide a real phone number
+  /// before completing registration.
+  Future<Map<String, dynamic>> updatePhoneNumber({
+    required String phoneNumber,
+  }) async {
+    if (!backendEnabled) return <String, dynamic>{'success': true};
+
+    logInfo('ApiService', 'updatePhoneNumber ➡️ $phoneNumber');
+
+    try {
+      final response = await _dio.post(
+        '/auth/update-phone',
+        data: {'phoneNumber': phoneNumber},
+      );
+      logInfo(
+        'ApiService',
+        'updatePhoneNumber ✅ status: ${response.statusCode}',
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'updatePhoneNumber ❌ status ${e.response?.statusCode} | '
+            'body: ${e.response?.data}',
+      );
+      throw ApiException(
+        message:
+            _extractBackendMessage(e) ??
+            'فشل تحديث رقم الهاتف (${e.response?.statusCode})',
+      );
+    }
+  }
+
   /// Checks whether the current JWT belongs to a fully‑registered driver on
   /// the backend (i.e. a driverProfile record exists).
   ///

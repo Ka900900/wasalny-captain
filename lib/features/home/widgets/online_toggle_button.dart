@@ -3,13 +3,13 @@ import 'package:flutter/services.dart';
 
 import 'package:waslny_captain/core/theme/app_theme.dart';
 
-/// Large pill-shaped online/offline toggle button.
+/// Compact pill-shaped online/offline toggle button.
 ///
-/// Placed at the bottom of the home screen as the primary action.
+/// Placed at the top of the home screen as a small status indicator.
 ///
 /// **Visual states:**
-/// - **Online:** Bright green/gradient, pulsing glow dot, "أنت أونلاين الآن – بانتظار الرحلات"
-/// - **Offline:** Neutral dark-grey, "غير متصل – اضغط للبدء"
+/// - **Online:** Bright green/gradient, pulsing glow dot, "متصل"
+/// - **Offline:** Neutral dark-grey, "غير متصل"
 /// - **Loading:** Circular spinner inside the button while API processes
 class OnlineToggleButton extends StatefulWidget {
   final bool isOnline;
@@ -90,37 +90,37 @@ class _OnlineToggleButtonState extends State<OnlineToggleButton>
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeInOut,
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 18),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
           decoration: BoxDecoration(
             color: widget.isOnline ? const Color(0xFF10B981) : AppColors.card,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusXxl),
             border: Border.all(
               color: widget.isOnline
                   ? const Color(0xFF059669)
                   : AppColors.border,
-              width: 1.5,
+              width: 1.2,
             ),
             boxShadow: widget.isOnline
                 ? [
                     BoxShadow(
                       color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                      blurRadius: 20,
-                      spreadRadius: 2,
+                      blurRadius: 16,
+                      spreadRadius: 1,
                     ),
                   ]
                 : [],
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // ── Icon: spinner when loading, dot otherwise ──
               if (widget.isLoading)
                 const SizedBox(
-                  width: 22,
-                  height: 22,
+                  width: 16,
+                  height: 16,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
+                    strokeWidth: 2,
                     color: Colors.white,
                   ),
                 )
@@ -129,8 +129,8 @@ class _OnlineToggleButtonState extends State<OnlineToggleButton>
                   animation: _pulseAnimation,
                   builder: (context, _) {
                     return Container(
-                      width: 14,
-                      height: 14,
+                      width: 8,
+                      height: 8,
                       decoration: BoxDecoration(
                         color: widget.isOnline
                             ? Colors.white
@@ -142,8 +142,8 @@ class _OnlineToggleButtonState extends State<OnlineToggleButton>
                                   color: Colors.white.withValues(
                                     alpha: _pulseAnimation.value * 0.5,
                                   ),
-                                  blurRadius: 10,
-                                  spreadRadius: _pulseAnimation.value * 4,
+                                  blurRadius: 6,
+                                  spreadRadius: _pulseAnimation.value * 2,
                                 ),
                               ]
                             : [],
@@ -151,48 +151,28 @@ class _OnlineToggleButtonState extends State<OnlineToggleButton>
                     );
                   },
                 ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 8),
 
-              // ── Label ──
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.isLoading
-                          ? (widget.isOnline
-                                ? 'جارٍ إيقاف التشغيل…'
-                                : 'جارٍ التشغيل…')
-                          : (widget.isOnline ? 'أنت أونلاين الآن' : 'غير متصل'),
-                      style: TextStyle(
-                        color: widget.isOnline
-                            ? Colors.white
-                            : AppColors.textSecondary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    if (!widget.isLoading)
-                      Text(
-                        widget.isOnline ? 'بانتظار الرحلات' : 'اضغط للبدء',
-                        style: TextStyle(
-                          color: widget.isOnline
-                              ? Colors.white.withValues(alpha: 0.8)
-                              : AppColors.textMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                  ],
+              // ── Label (single line) ──
+              Text(
+                widget.isLoading
+                    ? (widget.isOnline ? 'جارٍ الإيقاف…' : 'جارٍ التشغيل…')
+                    : (widget.isOnline ? 'متصل' : 'غير متصل'),
+                style: TextStyle(
+                  color: widget.isOnline
+                      ? Colors.white
+                      : AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
+
+              const SizedBox(width: 6),
 
               // ── Power icon ──
               Icon(
                 widget.isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                size: 24,
+                size: 16,
                 color: widget.isOnline ? Colors.white : AppColors.textMuted,
               ),
             ],
