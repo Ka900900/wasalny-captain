@@ -17,8 +17,6 @@ import 'package:waslny_captain/features/ratings/ratings_screen.dart';
 import 'package:waslny_captain/features/profile/settings_screen.dart';
 import 'package:waslny_captain/features/support/support_chat_screen.dart';
 import 'package:waslny_captain/features/wallet/wallet_screen.dart';
-import 'package:waslny_captain/core/services/database_service.dart';
-import 'package:waslny_captain/core/models/captain_model.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,7 +28,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoggingOut = false;
   bool _isUploading = false;
-  final DatabaseService _dbService = DatabaseService();
 
   // ──────────────────────────────────────────────
   // Navigation
@@ -324,7 +321,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 );
               }
 
-              // Parse captain data from backend response into DriverProfile
+              // Parse captain data from backend API response into DriverProfile
               final captainData =
                   snapshot.data?['captain'] as Map<String, dynamic>?;
               final DriverProfile? profile = captainData != null
@@ -386,147 +383,130 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // ── Divider ───────────────────────────────
                   const Divider(height: 1),
 
-                  // ── Menu list (streamed captain data for live values)
-                  StreamBuilder<CaptainModel?>(
-                    stream: _dbService.captainDataStream,
-                    builder: (context, capSnap) {
-                      final captain = capSnap.data;
-                      return Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xxl,
-                            vertical: AppSpacing.lg,
-                          ),
-                          physics: const BouncingScrollPhysics(),
-                          children: [
-                            if (profile != null) _buildDocumentsBanner(profile),
-                            // small header showing name from captain if available
-                            if (captain != null) ...[
-                              Text(
-                                captain.name,
-                                style: AppTextStyles.headlineSmall,
+                  // ── Menu list (backend API is the single source of truth)
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xxl,
+                        vertical: AppSpacing.lg,
+                      ),
+                      physics: const BouncingScrollPhysics(),
+                      children: [
+                        if (profile != null) _buildDocumentsBanner(profile),
+                        _ProfileMenuItem(
+                          icon: Icons.person_outline_rounded,
+                          iconColor: AppColors.primary,
+                          title: 'الحساب الشخصي',
+                          subtitle: 'تعديل الاسم والصورة',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    EditProfileScreen(profile: profile),
                               ),
-                              const SizedBox(height: 8),
-                            ],
-                            _ProfileMenuItem(
-                              icon: Icons.person_outline_rounded,
-                              iconColor: AppColors.primary,
-                              title: 'الحساب الشخصي',
-                              subtitle: 'تعديل الاسم والصورة',
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => EditProfileScreen(
-                                      profile: profile,
-                                      captain: captain,
-                                    ),
-                                  ),
-                                ).then((changed) {
-                                  if (changed == true && mounted) {
-                                    setState(() {});
-                                  }
-                                });
-                              },
-                            ),
-                            _ProfileMenuItem(
-                              icon: Icons.directions_car_outlined,
-                              iconColor: AppColors.info,
-                              title: 'معلومات المركبة',
-                              subtitle: 'نوع السيارة، اللوحة',
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        VehicleInfoScreen(captain: captain),
-                                  ),
-                                );
-                              },
-                            ),
-                            _ProfileMenuItem(
-                              icon: Icons.trending_up_rounded,
-                              iconColor: AppColors.success,
-                              title: 'الأرباح',
-                              subtitle:
-                                  'المعدلات والأرباح اليومي والأسبوعي والشهري',
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const EarningsScreen(),
-                                  ),
-                                );
-                              },
-                            ),
-                            _ProfileMenuItem(
-                              icon: Icons.account_balance_wallet_outlined,
-                              iconColor: AppColors.warning,
-                              title: 'المحفظة',
-                              subtitle: 'الرصيد والمعاملات وشحن المحفظة',
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const WalletScreen(),
-                                  ),
-                                );
-                              },
-                            ),
-                            _ProfileMenuItem(
-                              icon: Icons.star_outline_rounded,
-                              iconColor: AppColors.warning,
-                              title: 'التقييمات',
-                              subtitle: 'آراء الركاب ونظام التقييم',
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const RatingsScreen(),
-                                  ),
-                                );
-                              },
-                            ),
-                            _ProfileMenuItem(
-                              icon: Icons.help_outline_rounded,
-                              iconColor: AppColors.info,
-                              title: 'الدعم والمساعدة',
-                              subtitle: 'الدردشة الحية مع الدعم',
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const SupportChatScreen(),
-                                  ),
-                                );
-                              },
-                            ),
-                            _ProfileMenuItem(
-                              icon: Icons.settings_outlined,
-                              iconColor: AppColors.textMuted,
-                              title: 'الإعدادات',
-                              subtitle: 'اللغة، الإشعارات',
-                              onTap: () {
-                                HapticFeedback.lightImpact();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const SettingsScreen(),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: AppSpacing.lg),
-                          ],
+                            ).then((changed) {
+                              if (changed == true && mounted) {
+                                setState(() {});
+                              }
+                            });
+                          },
                         ),
-                      );
-                    },
+                        _ProfileMenuItem(
+                          icon: Icons.directions_car_outlined,
+                          iconColor: AppColors.info,
+                          title: 'معلومات المركبة',
+                          subtitle: 'نوع السيارة، اللوحة',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const VehicleInfoScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ProfileMenuItem(
+                          icon: Icons.trending_up_rounded,
+                          iconColor: AppColors.success,
+                          title: 'الأرباح',
+                          subtitle:
+                              'المعدلات والأرباح اليومي والأسبوعي والشهري',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const EarningsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ProfileMenuItem(
+                          icon: Icons.account_balance_wallet_outlined,
+                          iconColor: AppColors.warning,
+                          title: 'المحفظة',
+                          subtitle: 'الرصيد والمعاملات وشحن المحفظة',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const WalletScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ProfileMenuItem(
+                          icon: Icons.star_outline_rounded,
+                          iconColor: AppColors.warning,
+                          title: 'التقييمات',
+                          subtitle: 'آراء الركاب ونظام التقييم',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const RatingsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ProfileMenuItem(
+                          icon: Icons.help_outline_rounded,
+                          iconColor: AppColors.info,
+                          title: 'الدعم والمساعدة',
+                          subtitle: 'الدردشة الحية مع الدعم',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const SupportChatScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ProfileMenuItem(
+                          icon: Icons.settings_outlined,
+                          iconColor: AppColors.textMuted,
+                          title: 'الإعدادات',
+                          subtitle: 'اللغة، الإشعارات',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const SettingsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                    ),
                   ),
 
                   // ── Logout button ─────────────────────────
@@ -597,137 +577,124 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildHeaderCard(DriverProfile? profile, bool loading) {
     if (loading) return _buildHeaderShimmer();
 
-    return StreamBuilder<CaptainModel?>(
-      stream: _dbService.captainDataStream,
-      builder: (context, snap) {
-        final CaptainModel? captain = snap.data;
+    if (profile == null) return _buildHeaderShimmer();
 
-        final String name = captain?.name.isNotEmpty == true
-            ? captain!.name
-            : ((profile?.name.isNotEmpty == true) ? profile!.name : '');
-        final String phone =
-            captain?.phone ??
-            profile?.phone ??
-            AuthService.instance.currentPhoneNumber;
-        // تُعطى الأولوية للصورة المرفوعة يدويًا (photoUrl) على صورة Google (profilePic).
-        // لو المستخدم رفع صورة، `profile.photoUrl` بتكون أحدث من `captain.profilePic`.
-        final String? photoUrl = profile?.photoUrl ?? captain?.profilePic;
-        final double rating = profile?.rating ?? 0.0;
+    final String name = profile.name.isNotEmpty ? profile.name : '';
+    final String phone = profile.phone.isNotEmpty
+        ? profile.phone
+        : AuthService.instance.currentPhoneNumber;
+    final String? photoUrl = profile.photoUrl;
+    final double rating = profile.rating ?? 0.0;
 
-        return GestureDetector(
-          onTap: () => _navigateToEditProfile(profile),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.2),
+    return GestureDetector(
+      onTap: () => _navigateToEditProfile(profile),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        decoration: BoxDecoration(
+          gradient: AppColors.primaryGradient,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+          boxShadow: AppColors.shadowMd,
+        ),
+        child: Row(
+          children: [
+            // Avatar with edit badge (tap to change photo)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _pickAndUploadPhoto(profile),
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 38,
+                    backgroundColor: AppColors.cardElevated,
+                    backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                        ? NetworkImage(photoUrl) as ImageProvider
+                        : const AssetImage('assets/myimage.jpg'),
+                  ),
+                  // مؤشر التحميل أثناء رفع الصورة
+                  if (_isUploading)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.bg, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.edit_rounded,
+                        color: AppColors.textOnPrimary,
+                        size: 11,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              boxShadow: AppColors.shadowMd,
             ),
-            child: Row(
-              children: [
-                // Avatar with edit badge (tap to change photo)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _pickAndUploadPhoto(profile),
-                  child: Stack(
-                    children: [
-                      CircleAvatar(
-                        radius: 38,
-                        backgroundColor: AppColors.cardElevated,
-                        backgroundImage:
-                            (photoUrl != null && photoUrl.isNotEmpty)
-                            ? NetworkImage(photoUrl) as ImageProvider
-                            : const AssetImage('assets/myimage.jpg'),
-                      ),
-                      // مؤشر التحميل أثناء رفع الصورة
-                      if (_isUploading)
-                        Positioned.fill(
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 3,
-                            ),
-                          ),
-                        ),
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.bg, width: 2),
-                          ),
-                          child: const Icon(
-                            Icons.edit_rounded,
-                            color: AppColors.textOnPrimary,
-                            size: 11,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.lg),
+            const SizedBox(width: AppSpacing.lg),
 
-                // Name, phone, rating
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            // Name, phone, rating
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.isNotEmpty ? name : phone,
+                    style: AppTextStyles.headlineSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (name.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(phone, style: AppTextStyles.bodySmall),
+                  ],
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
                     children: [
+                      const Icon(
+                        Icons.star_rounded,
+                        color: AppColors.warning,
+                        size: 16,
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
                       Text(
-                        name.isNotEmpty ? name : phone,
-                        style: AppTextStyles.headlineSmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        rating > 0 ? rating.toStringAsFixed(1) : '—',
+                        style: AppTextStyles.labelMedium?.copyWith(
+                          color: AppColors.warning,
+                        ),
                       ),
-                      if (name.isNotEmpty) ...[
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(phone, style: AppTextStyles.bodySmall),
-                      ],
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            color: AppColors.warning,
-                            size: 16,
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          Text(
-                            rating > 0 ? rating.toStringAsFixed(1) : '—',
-                            style: AppTextStyles.labelMedium?.copyWith(
-                              color: AppColors.warning,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text('تعديل الملف', style: AppTextStyles.labelSmall),
-                        ],
-                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text('تعديل الملف', style: AppTextStyles.labelSmall),
                     ],
                   ),
-                ),
-
-                const Icon(
-                  Icons.chevron_left_rounded,
-                  color: AppColors.textMuted,
-                  size: 22,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
+
+            const Icon(
+              Icons.chevron_left_rounded,
+              color: AppColors.textMuted,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
