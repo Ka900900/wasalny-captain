@@ -199,6 +199,8 @@ class ApiService {
     String? licenseUrl,
     String? licenseBackUrl,
     String? licenseNumber,
+    String? vehicleLicenseFrontUrl,
+    String? vehicleLicenseBackUrl,
     String? criminalRecordUrl,
     String? drugTestUrl,
   }) async {
@@ -226,6 +228,10 @@ class ApiService {
         'licenseBackUrl': licenseBackUrl,
       if (licenseNumber != null && licenseNumber.isNotEmpty)
         'licenseNumber': licenseNumber,
+      if (vehicleLicenseFrontUrl != null && vehicleLicenseFrontUrl.isNotEmpty)
+        'vehicleLicenseFrontUrl': vehicleLicenseFrontUrl,
+      if (vehicleLicenseBackUrl != null && vehicleLicenseBackUrl.isNotEmpty)
+        'vehicleLicenseBackUrl': vehicleLicenseBackUrl,
       // الوثائق الاختيارية — تُرسل فقط إذا وفرها الكابتن
       if (criminalRecordUrl != null && criminalRecordUrl.isNotEmpty)
         'criminalRecordUrl': criminalRecordUrl,
@@ -290,17 +296,6 @@ class ApiService {
         // محاولة قراءة الحقول المعروفة لرسائل الخطأ
         return (data['message'] ?? data['error'] ?? data['msg'] ?? '')
             .toString();
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  /// يستخرج رمز الخطأ (code) من رد الباك إند.
-  String? _extractBackendCode(DioException e) {
-    try {
-      final data = e.response?.data;
-      if (data is Map) {
-        return data['code'] as String?;
       }
     } catch (_) {}
     return null;

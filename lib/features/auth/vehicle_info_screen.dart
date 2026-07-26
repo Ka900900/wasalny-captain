@@ -62,6 +62,8 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   String? _idCardBackUrl;
   String? _carPhotoUrl;
   File? _pickedCarPhoto;
+  String? _vehicleLicenseFrontUrl;
+  String? _vehicleLicenseBackUrl;
   String? _criminalRecordUrl;
   File? _pickedCriminalRecord;
   String? _drugTestUrl;
@@ -495,6 +497,18 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
     label: 'الرخصة (ظهر)',
   );
 
+  Future<void> _captureVehicleLicenseFront() => _captureAndUploadDoc(
+    docType: UploadDocType.vehicleLicenseFront,
+    onUrl: (url) => _vehicleLicenseFrontUrl = url,
+    label: 'رخصة السيارة (وجه)',
+  );
+
+  Future<void> _captureVehicleLicenseBack() => _captureAndUploadDoc(
+    docType: UploadDocType.vehicleLicenseBack,
+    onUrl: (url) => _vehicleLicenseBackUrl = url,
+    label: 'رخصة السيارة (ظهر)',
+  );
+
   Widget _buildDocPreview({required String label, required String? imageUrl}) {
     return Container(
       height: 120,
@@ -733,6 +747,8 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         licenseUrl: _licenseUrl,
         licenseBackUrl: _licenseBackUrl,
         licenseNumber: _licenseNumberCtrl.text.trim(),
+        vehicleLicenseFrontUrl: _vehicleLicenseFrontUrl,
+        vehicleLicenseBackUrl: _vehicleLicenseBackUrl,
         criminalRecordUrl: _criminalRecordUrl,
         drugTestUrl: _drugTestUrl,
       );
@@ -1185,6 +1201,44 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                       child: _buildDocPreview(
                                         label: 'الوجه الخلفي',
                                         imageUrl: _licenseBackUrl,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 18),
+
+                              // ── Vehicle License ───────────
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  'رخصة السيارة / الموتوسيكل',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _captureVehicleLicenseFront,
+                                      child: _buildDocPreview(
+                                        label: 'الوجه الأمامي',
+                                        imageUrl: _vehicleLicenseFrontUrl,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: _captureVehicleLicenseBack,
+                                      child: _buildDocPreview(
+                                        label: 'الوجه الخلفي',
+                                        imageUrl: _vehicleLicenseBackUrl,
                                       ),
                                     ),
                                   ),

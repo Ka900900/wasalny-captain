@@ -19,7 +19,9 @@ enum UploadDocType {
   face('face'),
   car('car'),
   profile('profile'),
-  insurance('insurance');
+  insurance('insurance'),
+  vehicleLicenseFront('vehicle-license-front'),
+  vehicleLicenseBack('vehicle-license-back');
 
   const UploadDocType(this.endpoint);
   final String endpoint;
