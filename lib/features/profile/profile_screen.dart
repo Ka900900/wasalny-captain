@@ -321,42 +321,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 );
               }
 
-              // Parse captain data from backend API response into DriverProfile
-              final captainData =
-                  snapshot.data?['captain'] as Map<String, dynamic>?;
-              final DriverProfile? profile = captainData != null
+              // Parse profile data from backend API response (no wrapper)
+              final data = snapshot.data;
+              final driverProfile =
+                  data?['driverProfile'] as Map<String, dynamic>?;
+              final DriverProfile? profile = data != null
                   ? DriverProfile(
-                      uid: captainData['firebaseUid'] as String? ?? uid,
-                      name: captainData['name'] as String? ?? '',
-                      phone: captainData['phone'] as String? ?? '',
-                      photoUrl: captainData['photoUrl'] as String?,
-                      carPhotoUrl: captainData['carPhotoUrl'] as String?,
+                      uid: data['id'] as String? ?? uid,
+                      name: [
+                        data['firstName'] as String?,
+                        data['lastName'] as String?,
+                      ].where((s) => s != null && s.isNotEmpty).join(' '),
+                      phone: data['phoneNumber'] as String? ?? '',
+                      photoUrl: data['avatarUrl'] as String?,
+                      carPhotoUrl: driverProfile?['carPhotoUrl'] as String?,
                       nationalId: null,
-                      idCardUrl: captainData['idCardUrl'] as String?,
-                      idCardBackUrl: captainData['idCardBackUrl'] as String?,
-                      vehicleType: captainData['vehicleType'] as String? ?? '',
-                      vehicleModel:
-                          captainData['vehicleModel'] as String? ?? '',
-                      vehicleColor:
-                          captainData['vehicleColor'] as String? ?? '',
+                      idCardUrl: driverProfile?['idPhotoFront'] as String?,
+                      idCardBackUrl: driverProfile?['idCardBackUrl'] as String?,
+                      vehicleType:
+                          driverProfile?['vehicleType'] as String? ?? '',
+                      vehicleModel: driverProfile?['carModel'] as String? ?? '',
+                      vehicleColor: driverProfile?['carColor'] as String? ?? '',
                       vehicleNumber:
-                          captainData['vehicleNumber'] as String? ?? '',
-                      licenseUrl: captainData['licenseUrl'] as String?,
-                      licenseBackUrl: captainData['licenseBackUrl'] as String?,
-                      licenseNumber: captainData['licenseNumber'] as String?,
-                      insuranceUrl: captainData['insuranceUrl'] as String?,
+                          driverProfile?['carPlateNumber'] as String? ?? '',
+                      licenseUrl: driverProfile?['licensePhoto'] as String?,
+                      licenseBackUrl:
+                          driverProfile?['licenseBackUrl'] as String?,
+                      licenseNumber: driverProfile?['licenseNumber'] as String?,
+                      insuranceUrl: null,
                       criminalRecordUrl:
-                          captainData['criminalRecordUrl'] as String?,
-                      drugTestUrl: captainData['drugTestUrl'] as String?,
+                          driverProfile?['criminalRecordUrl'] as String?,
+                      drugTestUrl: driverProfile?['drugTestUrl'] as String?,
                       documentsGraceEndsAt: null,
                       isBanned: false,
                       banUntil: null,
-                      rating: (captainData['rating'] as num?)?.toDouble(),
-                      createdAt: captainData['createdAt'] != null
-                          ? DateTime.parse(captainData['createdAt'] as String)
+                      rating: 0.0,
+                      createdAt: data['createdAt'] != null
+                          ? DateTime.parse(data['createdAt'] as String)
                           : DateTime.now(),
-                      updatedAt: captainData['updatedAt'] != null
-                          ? DateTime.parse(captainData['updatedAt'] as String)
+                      updatedAt: data['updatedAt'] != null
+                          ? DateTime.parse(data['updatedAt'] as String)
                           : DateTime.now(),
                     )
                   : null;
