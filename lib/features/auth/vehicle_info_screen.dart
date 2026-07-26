@@ -11,6 +11,7 @@ import 'package:waslny_captain/core/services/image_upload_service.dart';
 import 'package:waslny_captain/core/services/document_upload_service.dart';
 import 'package:waslny_captain/features/verification/camera_screen.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
+import 'package:waslny_captain/features/auth/verification_pending_screen.dart';
 
 /// Vehicle Information screen for new captains (after Registration).
 ///
@@ -753,12 +754,18 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         drugTestUrl: _drugTestUrl,
       );
 
-      // Navigate to Home
+      // Navigate to verification pending (new registration is always PENDING)
       debugPrint('═══════════════════════════════════════════════════');
-      debugPrint('✅ _save → registerDriver SUCCESS — navigating to /home');
+      debugPrint('✅ _save → registerDriver SUCCESS — navigating to verification pending');
       debugPrint('═══════════════════════════════════════════════════');
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const VerificationPendingScreen(),
+          ),
+          (_) => false,
+        );
       }
     } catch (e) {
       if (mounted) {

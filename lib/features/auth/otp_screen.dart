@@ -5,8 +5,10 @@ import 'package:pinput/pinput.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:waslny_captain/core/services/auth_service.dart';
+import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
+import 'package:waslny_captain/features/auth/verification_pending_screen.dart';
 
 class OTPScreen extends StatefulWidget {
   final String verificationId;
@@ -157,8 +159,8 @@ class _OTPScreenState extends State<OTPScreen>
               arguments: widget.phoneNumber,
             );
           } else {
-            // Existing user – go to Home
-            Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+            // Existing user – check verification status
+            await _navigateBasedOnVerification();
           }
         }
       } else {
@@ -184,6 +186,56 @@ class _OTPScreenState extends State<OTPScreen>
             backgroundColor: AppColors.error,
           ),
         );
+      }
+    }
+  }
+
+  /// يستدعي API البروفايل ويوجّه المستخدم بناءً على حالة التحقق.
+  Future<void> _navigateBasedOnVerification() async {
+    try {
+      final data = await ApiService.instance.getProfile();
+      if (!mounted) return;
+
+      final role = data['role'] as String? ?? 'RIDER';
+      if (role == 'RIDER') {
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+        return;
+      }
+
+      final driverProfile = data['driverProfile'] as Map<String, dynamic>?;
+      final status =
+          driverProfile?['verificationStatus'] as String? ?? 'PENDING';
+
+      switch (status) {
+        case 'APPROVED':
+          Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+          break;
+        case 'REJECTED':
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => VerificationPendingScreen(
+                rejectionReason:
+                    driverProfile?['rejectionReason'] as String?,
+              ),
+            ),
+            (_) => false,
+          );
+          break;
+        default: // PENDING
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const VerificationPendingScreen(),
+            ),
+            (_) => false,
+          );
+          break;
+      }
+    } catch (_) {
+      // آمن: في حال فشل الـ API نوجّه للـ Home
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
       }
     }
   }

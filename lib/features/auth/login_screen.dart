@@ -7,6 +7,7 @@ import 'package:waslny_captain/core/network/api_exceptions.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
+import 'package:waslny_captain/features/auth/verification_pending_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -80,14 +81,14 @@ class _LoginScreenState extends State<LoginScreen>
       final isRegistered = await ApiService.instance.isDriverRegistered();
       if (mounted) {
         if (isRegistered && !needsPhoneEntry) {
-          // Existing user with real phone – go to Home
-          Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+          // Existing user with real phone – check verification status
+          await _navigateBasedOnVerification();
         } else if (isRegistered && needsPhoneEntry) {
           // Registered but has placeholder phone – prompt for real phone
           final realPhone = await _showPhoneEntryDialog();
           if (realPhone != null && realPhone.isNotEmpty && mounted) {
             await ApiService.instance.updatePhoneNumber(phoneNumber: realPhone);
-            Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+            await _navigateBasedOnVerification();
           }
         } else {
           // First login – go to onboarding with Google data pre‑filled
@@ -132,6 +133,60 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       setState(() => _isLoading = false);
       _showError(e.toString());
+    }
+  }
+
+  /// يستدعي API البروفايل ويوجّه المستخدم بناءً على الحالة:
+  /// • RIDER → `/home`
+  /// • DRIVER + APPROVED → `/home`
+  /// • DRIVER + PENDING → VerificationPendingScreen()
+  /// • DRIVER + REJECTED → VerificationPendingScreen(rejectionReason: …)
+  Future<void> _navigateBasedOnVerification() async {
+    try {
+      final data = await ApiService.instance.getProfile();
+      if (!mounted) return;
+
+      final role = data['role'] as String? ?? 'RIDER';
+      if (role == 'RIDER') {
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+        return;
+      }
+
+      final driverProfile = data['driverProfile'] as Map<String, dynamic>?;
+      final status =
+          driverProfile?['verificationStatus'] as String? ?? 'PENDING';
+
+      switch (status) {
+        case 'APPROVED':
+          Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+          break;
+        case 'REJECTED':
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => VerificationPendingScreen(
+                rejectionReason:
+                    driverProfile?['rejectionReason'] as String?,
+              ),
+            ),
+            (_) => false,
+          );
+          break;
+        default: // PENDING
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const VerificationPendingScreen(),
+            ),
+            (_) => false,
+          );
+          break;
+      }
+    } catch (_) {
+      // إذا فشل الـ API نوجّه للـ Home كسلوك آمن
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+      }
     }
   }
 
