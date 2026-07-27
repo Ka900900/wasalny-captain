@@ -25,7 +25,9 @@ class WalletTransaction {
       amount: (map['amount'] as num?)?.toDouble() ?? 0,
       description: map['description'] as String? ?? '',
       status: map['status'] as String? ?? 'completed',
-      createdAt: (map['createdAt'] as dynamic)?.toDate() ?? DateTime.now(),
+      createdAt: map['createdAt'] != null
+          ? DateTime.parse(map['createdAt'].toString())
+          : DateTime.now(),
     );
   }
 
@@ -94,8 +96,12 @@ class WithdrawRequest {
       bankName: map['bankName'] as String?,
       accountHolder: map['accountHolder'] as String?,
       instapayId: map['instapayId'] as String?,
-      createdAt: (map['createdAt'] as dynamic)?.toDate() ?? DateTime.now(),
-      updatedAt: (map['updatedAt'] as dynamic)?.toDate(),
+      createdAt: map['createdAt'] != null
+          ? DateTime.parse(map['createdAt'].toString())
+          : DateTime.now(),
+      updatedAt: map['updatedAt'] != null
+          ? DateTime.parse(map['updatedAt'].toString())
+          : null,
       paymentMethodId: map['paymentMethodId'] as String?,
       paymentMethodType: map['paymentMethodType'] as String?,
       paymentMethodLabel: map['paymentMethodLabel'] as String?,

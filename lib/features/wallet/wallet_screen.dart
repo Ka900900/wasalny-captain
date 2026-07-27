@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:waslny_captain/core/theme/app_theme.dart';
@@ -42,8 +41,6 @@ class _WalletScreenState extends State<WalletScreen> {
   // Error shown when a withdrawal is submitted without picking a method
   String? _methodError;
 
-  StreamSubscription<WalletData>? _walletSubscription;
-
   @override
   void initState() {
     super.initState();
@@ -52,7 +49,6 @@ class _WalletScreenState extends State<WalletScreen> {
 
   @override
   void dispose() {
-    _walletSubscription?.cancel();
     super.dispose();
   }
 
@@ -61,22 +57,39 @@ class _WalletScreenState extends State<WalletScreen> {
     if (uid.isEmpty) return;
     _uid = uid;
 
-    // Wallet data – real-time stream
-    _walletSubscription = WalletRepository.instance.streamWallet(uid).listen((
-      data,
-    ) {
+    // Wallet data – single fetch from backend
+    try {
+      final data = await WalletRepository.instance.fetchWalletData(uid);
       if (mounted) {
         setState(() {
           _walletData = data;
           _loadingWallet = false;
         });
       }
-    });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingWallet = false);
+      }
+    }
 
     // One-shot fetches for lists
     _loadTransactions(uid);
     _loadWithdrawRequests(uid);
     _loadPaymentMethods(uid);
+  }
+
+  /// Pull-to-refresh handler.
+  Future<void> _onRefresh() async {
+    final uid = _uid;
+    if (uid.isEmpty) return;
+    await Future.wait([
+      WalletRepository.instance.refreshWallet(uid).then((data) {
+        if (mounted) setState(() => _walletData = data);
+      }),
+      _loadTransactions(uid),
+      _loadWithdrawRequests(uid),
+      _loadPaymentMethods(uid),
+    ]);
   }
 
   Future<void> _loadTransactions(String uid) async {
@@ -124,20 +137,25 @@ class _WalletScreenState extends State<WalletScreen> {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Balance card
-            _buildBalanceCard(),
-            const SizedBox(height: 14),
-            // Quick actions
-            _buildQuickActions(),
-            const SizedBox(height: 16),
-            // Tab selector
-            _buildTabSelector(),
-            const SizedBox(height: 8),
-            // Tab content
-            Expanded(child: _buildTabContent()),
-          ],
+        child: RefreshIndicator(
+          onRefresh: _onRefresh,
+          color: const Color(0xFF7ED957),
+          backgroundColor: const Color(0xFF1E1E1E),
+          child: Column(
+            children: [
+              // Balance card
+              _buildBalanceCard(),
+              const SizedBox(height: 14),
+              // Quick actions
+              _buildQuickActions(),
+              const SizedBox(height: 16),
+              // Tab selector
+              _buildTabSelector(),
+              const SizedBox(height: 8),
+              // Tab content
+              Expanded(child: _buildTabContent()),
+            ],
+          ),
         ),
       ),
     );
@@ -1020,9 +1038,10 @@ class _WalletScreenState extends State<WalletScreen> {
 
   void _showAddBalanceSheet() {
     final amountCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     bool isLoading = false;
-    // طريقة الدفع المختارة: 'card' (فيزا) أو 'vodafone_cash' (محفظة)
+    // طريقة الدفع المختارة: 'card' (بطاقة بنكية) أو 'wallet' (محفظة)
     String selectedMethod = 'card';
 
     showModalBottomSheet(
@@ -1114,7 +1133,7 @@ class _WalletScreenState extends State<WalletScreen> {
                       children: [
                         Expanded(
                           child: _PaymentMethodChip(
-                            label: 'فيزا / بطاقة',
+                            label: 'بطاقة بنكية',
                             icon: Icons.credit_card,
                             selected: selectedMethod == 'card',
                             onTap: () =>
@@ -1124,16 +1143,37 @@ class _WalletScreenState extends State<WalletScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: _PaymentMethodChip(
-                            label: 'محفظة إلكترونية',
+                            label: 'محفظة',
                             icon: Icons.account_balance_wallet,
-                            selected: selectedMethod == 'vodafone_cash',
-                            onTap: () => setSheetState(
-                              () => selectedMethod = 'vodafone_cash',
-                            ),
+                            selected: selectedMethod == 'wallet',
+                            onTap: () =>
+                                setSheetState(() => selectedMethod = 'wallet'),
                           ),
                         ),
                       ],
                     ),
+                    if (selectedMethod == 'wallet') ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        maxLength: 11,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: _inputDecoration(
+                          'رقم المحفظة (رقم التليفون)',
+                          'مثال: 01001234567',
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'الرجاء إدخال رقم المحفظة';
+                          }
+                          if (v.trim().length < 11) {
+                            return 'رقم المحفظة يجب أن يكون 11 أرقام على الأقل';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     // Submit
                     SizedBox(
@@ -1173,6 +1213,9 @@ class _WalletScreenState extends State<WalletScreen> {
                                       .initiatePayment(
                                         amount: amount,
                                         paymentMethod: selectedMethod,
+                                        walletPhone: selectedMethod == 'wallet'
+                                            ? phoneCtrl.text.trim()
+                                            : null,
                                       );
 
                                   if (!response.containsKey('sessionId') ||
@@ -1283,10 +1326,11 @@ class _WalletScreenState extends State<WalletScreen> {
   void _showWithdrawSheet() {
     final amountCtrl = TextEditingController();
     final accountCtrl = TextEditingController();
-    final bankCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     final uid = AuthService.instance.currentUser?.uid ?? '';
-    PaymentMethod? selectedMethod;
+    bool isLoading = false;
+    String withdrawMethod = 'WALLET'; // 'WALLET' or 'INSTAPAY'
+    final availableBalance = _walletData?.balance ?? 0;
 
     showModalBottomSheet(
       context: context,
@@ -1296,328 +1340,236 @@ class _WalletScreenState extends State<WalletScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 24,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Handle
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'طلب سحب رصيد',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'سيتم إرسال طلب السحب ليتم معالجته عبر بوابة الدفع كاشير',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Saved payment methods (mandatory when available)
-                StatefulBuilder(
-                  builder: (ctx2, setSheet) {
-                    final hasMethods = _paymentMethods.isNotEmpty;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (hasMethods) ...[
-                          const Text(
-                            'طريقة الاستلام *',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _paymentMethods.map((pm) {
-                              final isSel = selectedMethod?.id == pm.id;
-                              return GestureDetector(
-                                onTap: () {
-                                  setState(() => _methodError = null);
-                                  setSheet(() {
-                                    if (selectedMethod?.id == pm.id) {
-                                      selectedMethod = null;
-                                      accountCtrl.clear();
-                                      bankCtrl.clear();
-                                    } else {
-                                      selectedMethod = pm;
-                                      accountCtrl.text = pm.accountNumber ?? '';
-                                      bankCtrl.text = pm.bankName ?? '';
-                                    }
-                                  });
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isSel
-                                        ? const Color(0xFF7ED957)
-                                        : Colors.white10,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: isSel
-                                          ? const Color(0xFF7ED957)
-                                          : Colors.white24,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        pm.icon,
-                                        size: 16,
-                                        color: isSel
-                                            ? Colors.black
-                                            : AppColors.textSecondary,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        pm.label,
-                                        style: TextStyle(
-                                          color: isSel
-                                              ? Colors.black
-                                              : AppColors.textSecondary,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                          if (_methodError != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                _methodError!,
-                                style: const TextStyle(
-                                  color: Colors.redAccent,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 14),
-                        ] else ...[
-                          // No saved methods yet – prompt to add one
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFFF59E0B,
-                              ).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFFF59E0B,
-                                ).withValues(alpha: 0.4),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.info_outline,
-                                  color: Color(0xFFF59E0B),
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: const Text(
-                                    'أضف طريقة دفع لاختيارها للسحب',
-                                    style: TextStyle(
-                                      color: Color(0xFFF59E0B),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () async {
-                                    await _showAddPaymentMethodSheet();
-                                    _loadPaymentMethods(uid);
-                                    setSheet(() {});
-                                  },
-                                  child: const Text(
-                                    'إضافة',
-                                    style: TextStyle(
-                                      color: Color(0xFF7ED957),
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                        ],
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                // Amount
-                TextFormField(
-                  controller: amountCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: const TextStyle(color: Colors.white),
-                  decoration: _inputDecoration('المبلغ', 'مثال: 500'),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'الرجاء إدخال المبلغ';
-                    final amount = double.tryParse(v);
-                    if (amount == null || amount <= 0) return 'مبلغ غير صالح';
-                    if (_walletData != null && amount > _walletData!.balance) {
-                      return 'المبلغ يتجاوز الرصيد المتاح';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 14),
-                // Account / InstaPay ID
-                TextFormField(
-                  controller: accountCtrl,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: _inputDecoration(
-                    selectedMethod?.type == 'instapay'
-                        ? 'معرف InstaPay'
-                        : 'رقم الحساب / المحفظة',
-                    selectedMethod?.type == 'instapay'
-                        ? 'مثال: user@instapay'
-                        : 'مثال: 01001234567',
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) {
-                      return selectedMethod?.type == 'instapay'
-                          ? 'الرجاء إدخال معرف InstaPay'
-                          : 'الرجاء إدخال رقم الحساب';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 14),
-                // Bank name (optional — hidden for InstaPay)
-                if (selectedMethod?.type != 'instapay')
-                  TextFormField(
-                    controller: bankCtrl,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: _inputDecoration(
-                      'اسم البنك (اختياري)',
-                      'البنك الأهلي',
-                    ),
-                  ),
-                const SizedBox(height: 24),
-                // Submit
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      if (!formKey.currentState!.validate()) return;
-                      if (_paymentMethods.isNotEmpty &&
-                          selectedMethod == null) {
-                        setState(
-                          () => _methodError = 'الرجاء اختيار طريقة الاستلام',
-                        );
-                        return;
-                      }
-                      final isInstapay =
-                          selectedMethod?.type == 'instapay';
-                      String? errorMsg;
-                      try {
-                        await ApiService.instance.requestWithdraw(
-                          amount: double.parse(amountCtrl.text),
-                          withdrawMethod:
-                              isInstapay ? 'INSTAPAY' : 'BANK',
-                          bankName:
-                              isInstapay ? null : (selectedMethod?.label ?? bankCtrl.text),
-                          bankAccount:
-                              isInstapay ? null : accountCtrl.text,
-                          accountHolder:
-                              isInstapay ? null : (selectedMethod?.label ?? bankCtrl.text),
-                          instapayId: isInstapay ? accountCtrl.text : null,
-                        );
-                      } on ApiException catch (e) {
-                        errorMsg = e.message;
-                      } catch (e) {
-                        errorMsg = 'حدث خطأ غير متوقع أثناء إرسال الطلب';
-                      }
-
-                      if (!ctx.mounted) return;
-
-                      if (errorMsg != null) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(errorMsg),
-                              backgroundColor: Colors.redAccent,
-                            ),
-                          );
-                        }
-                        return;
-                      }
-
-                      Navigator.pop(ctx);
-                      _loadWithdrawRequests(uid);
-                      setState(() => _currentTab = WalletTab.withdraws);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('تم إرسال طلب السحب بنجاح'),
-                            backgroundColor: Color(0xFF22C55E),
-                          ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7ED957),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                     ),
-                    child: const Text(
-                      'إرسال الطلب',
+                    const SizedBox(height: 20),
+                    const Text(
+                      'طلب سحب رصيد',
                       style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 16,
+                        color: Colors.white,
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'اختر طريقة السحب وأدخل المبلغ',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // طريقة السحب
+                    const Text(
+                      'طريقة السحب',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _PaymentMethodChip(
+                            label: 'محفظة إلكترونية',
+                            icon: Icons.account_balance_wallet,
+                            selected: withdrawMethod == 'WALLET',
+                            onTap: () {
+                              setSheetState(() {
+                                withdrawMethod = 'WALLET';
+                                accountCtrl.clear();
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _PaymentMethodChip(
+                            label: 'InstaPay',
+                            icon: Icons.send,
+                            selected: withdrawMethod == 'INSTAPAY',
+                            onTap: () {
+                              setSheetState(() {
+                                withdrawMethod = 'INSTAPAY';
+                                accountCtrl.clear();
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    // Amount
+                    TextFormField(
+                      controller: amountCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _inputDecoration('المبلغ', 'مثال: 500'),
+                      validator: (v) {
+                        if (v == null || v.isEmpty) {
+                          return 'الرجاء إدخال المبلغ';
+                        }
+                        final amount = double.tryParse(v);
+                        if (amount == null || amount <= 0) {
+                          return 'مبلغ غير صالح';
+                        }
+                        if (amount > availableBalance) {
+                          return 'المبلغ يتجاوز الرصيد المتاح (${availableBalance.toStringAsFixed(2)} ج.م)';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    // Account identifier (dynamic based on method)
+                    TextFormField(
+                      controller: accountCtrl,
+                      keyboardType: withdrawMethod == 'WALLET'
+                          ? TextInputType.phone
+                          : TextInputType.text,
+                      maxLength: withdrawMethod == 'WALLET' ? 11 : null,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _inputDecoration(
+                        withdrawMethod == 'WALLET'
+                            ? 'رقم المحفظة (رقم التليفون)'
+                            : 'معرف إنستاباي (InstaPay ID)',
+                        withdrawMethod == 'WALLET'
+                            ? 'مثال: 01001234567'
+                            : 'مثال: user@instapay',
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return withdrawMethod == 'WALLET'
+                              ? 'الرجاء إدخال رقم المحفظة'
+                              : 'الرجاء إدخال معرف InstaPay';
+                        }
+                        if (withdrawMethod == 'WALLET' &&
+                            v.trim().length < 11) {
+                          return 'رقم المحفظة يجب أن يكون 11 أرقام على الأقل';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    // Submit button with double-tap protection
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                if (!formKey.currentState!.validate()) return;
+                                setSheetState(() => isLoading = true);
+
+                                String? errorMsg;
+                                try {
+                                  await WalletRepository.instance
+                                      .submitWithdrawRequest(
+                                        uid,
+                                        amount: double.parse(amountCtrl.text),
+                                        withdrawMethod: withdrawMethod,
+                                        walletPhone: withdrawMethod == 'WALLET'
+                                            ? accountCtrl.text.trim()
+                                            : null,
+                                        instapayId: withdrawMethod == 'INSTAPAY'
+                                            ? accountCtrl.text.trim()
+                                            : null,
+                                      );
+                                } on ApiException catch (e) {
+                                  errorMsg = e.message;
+                                } catch (e) {
+                                  errorMsg =
+                                      'حدث خطأ غير متوقع أثناء إرسال الطلب';
+                                }
+
+                                if (!ctx.mounted) return;
+
+                                if (errorMsg != null) {
+                                  setSheetState(() => isLoading = false);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(errorMsg),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
+
+                                Navigator.pop(ctx);
+                                _loadWithdrawRequests(uid);
+                                setState(
+                                  () => _currentTab = WalletTab.withdraws,
+                                );
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('تم إرسال طلب السحب بنجاح'),
+                                      backgroundColor: Color(0xFF22C55E),
+                                    ),
+                                  );
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7ED957),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: isLoading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.black,
+                                ),
+                              )
+                            : const Text(
+                                'إرسال الطلب',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

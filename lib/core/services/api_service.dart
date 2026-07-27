@@ -392,6 +392,7 @@ class ApiService {
     String? bankAccount,
     String? accountHolder,
     String? instapayId,
+    String? walletPhone,
   }) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
     final data = <String, dynamic>{
@@ -404,6 +405,8 @@ class ApiService {
       data['accountHolder'] = accountHolder;
     } else if (withdrawMethod == 'INSTAPAY') {
       data['instapayId'] = instapayId;
+    } else if (withdrawMethod == 'WALLET') {
+      data['walletPhone'] = walletPhone;
     }
     final response = await _dio.post('/wallet/withdraw', data: data);
     return response.data as Map<String, dynamic>;
@@ -438,13 +441,18 @@ class ApiService {
   Future<Map<String, dynamic>> initiatePayment({
     required double amount,
     String paymentMethod = 'card',
+    String? walletPhone,
   }) async {
     if (!backendEnabled) return <String, dynamic>{};
     await _ensureTokenLoaded();
-    final response = await _dio.post(
-      '/wallet/top-up',
-      data: {'amount': amount, 'paymentMethod': paymentMethod},
-    );
+    final data = <String, dynamic>{
+      'amount': amount,
+      'paymentMethod': paymentMethod,
+    };
+    if (walletPhone != null) {
+      data['walletPhone'] = walletPhone;
+    }
+    final response = await _dio.post('/wallet/top-up', data: data);
     return response.data as Map<String, dynamic>;
   }
 
