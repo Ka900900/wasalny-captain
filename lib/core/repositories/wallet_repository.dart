@@ -199,7 +199,7 @@ class WalletRepository {
   // ──────────────────────────────────────────────────────
 
   /// Fetch all withdraw requests for the driver, newest first.
-  /// Priority: Backend API > Firestore > Sample data.
+  /// Priority: Backend API (PostgreSQL) > Firestore (fallback) > Sample data (dev only).
   Future<List<WithdrawRequest>> fetchWithdrawRequests(String uid) async {
     try {
       final result = await _api.getWithdrawals();
@@ -210,9 +210,11 @@ class WalletRepository {
             id: wd['id'] as String? ?? '',
             amount: (wd['amount'] as num?)?.toDouble() ?? 0,
             status: wd['status'] as String? ?? 'pending',
+            withdrawMethod: wd['withdrawMethod'] as String? ?? 'BANK',
             bankAccount: wd['bankAccount'] as String?,
             bankName: wd['bankName'] as String?,
             accountHolder: wd['accountHolder'] as String?,
+            instapayId: wd['instapayId'] as String?,
             createdAt: wd['createdAt'] != null
                 ? DateTime.parse(wd['createdAt'] as String)
                 : DateTime.now(),
@@ -241,37 +243,47 @@ class WalletRepository {
     }
   }
 
-  /// Submit a new withdrawal request.
-  Future<void> submitWithdrawRequest(
+  /// Submit a new withdrawal request via the Backend API.
+  /// يدعم التحويل البنكي (BANK) و InstaPay (INSTAPAY).
+  Future<Map<String, dynamic>> submitWithdrawRequest(
     String uid, {
     required double amount,
-    required String bankAccount,
+    String withdrawMethod = 'BANK',
     String? bankName,
+    String? bankAccount,
     String? accountHolder,
-    String? paymentMethodId,
-    String? paymentMethodType,
-    String? paymentMethodLabel,
+    String? instapayId,
   }) async {
-    await _withdrawRef(uid).add({
-      'amount': amount,
-      'status': 'pending',
-      'bankAccount': bankAccount,
-      'bankName': bankName,
-      'accountHolder': accountHolder,
-      'paymentMethodId': paymentMethodId,
-      'paymentMethodType': paymentMethodType,
-      'paymentMethodLabel': paymentMethodLabel,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    return _api.requestWithdraw(
+      amount: amount,
+      withdrawMethod: withdrawMethod,
+      bankName: bankName,
+      bankAccount: bankAccount,
+      accountHolder: accountHolder,
+      instapayId: instapayId,
+    );
   }
 
   // ──────────────────────────────────────────────────────
   // Public API – Payment Methods
   // ──────────────────────────────────────────────────────
 
-  /// Fetch saved payment methods.
+  /// Fetch saved payment methods from Backend API.
+  /// Priority: Backend API (PostgreSQL) > Firestore (fallback) > Sample data (dev only).
   Future<List<PaymentMethod>> fetchPaymentMethods(String uid) async {
+    try {
+      final result = await _api.getPaymentMethods();
+      if (result['paymentMethods'] != null) {
+        final list = result['paymentMethods'] as List;
+        return list
+            .cast<Map<String, dynamic>>()
+            .map((json) => PaymentMethod.fromJson(json))
+            .toList();
+      }
+    } catch (_) {
+      // Fallback to Firestore
+    }
+
     try {
       final snap = await _pmRef(uid).get();
       if (snap.docs.isEmpty) {
@@ -285,10 +297,9 @@ class WalletRepository {
     }
   }
 
-  /// Adds a new payment method and returns its document id.
-  ///
-  /// [isDefault] is auto-true when it's the captain's first method.
-  Future<String> addPaymentMethod(
+  /// Adds a new payment method via the Backend API.
+  /// Returns the created [PaymentMethod] from the server.
+  Future<PaymentMethod> addPaymentMethod(
     String uid, {
     required String type,
     required String label,
@@ -296,30 +307,48 @@ class WalletRepository {
     String? bankName,
     bool isDefault = false,
   }) async {
-    final ref = await _pmRef(uid).add({
-      'type': type,
-      'label': label,
-      'accountNumber': accountNumber,
-      'bankName': bankName,
-      'isDefault': isDefault,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    return ref.id;
+    final result = await _api.addPaymentMethod(
+      type: type,
+      label: label,
+      accountNumber: accountNumber,
+      bankName: bankName,
+    );
+    final json = result['paymentMethod'] as Map<String, dynamic>;
+    final pm = PaymentMethod.fromJson(json);
+    // Sync to Firestore cache
+    try {
+      await _pmRef(uid).doc(pm.id).set({
+        'type': pm.type,
+        'label': pm.label,
+        'accountNumber': pm.accountNumber,
+        'bankName': pm.bankName,
+        'isDefault': pm.isDefault,
+      });
+    } catch (_) {}
+    return pm;
   }
 
-  /// Deletes a saved payment method.
+  /// Deletes a saved payment method via the Backend API.
   Future<void> deletePaymentMethod(String uid, String id) async {
-    await _pmRef(uid).doc(id).delete();
+    await _api.deletePaymentMethod(id);
+    // Clean up Firestore cache
+    try {
+      await _pmRef(uid).doc(id).delete();
+    } catch (_) {}
   }
 
-  /// Marks a single payment method as default, clearing all others.
+  /// Sets a payment method as default via the Backend API.
   Future<void> setDefaultPaymentMethod(String uid, String id) async {
-    final batch = FirebaseFirestore.instance.batch();
-    final all = await _pmRef(uid).get();
-    for (final d in all.docs) {
-      batch.update(d.reference, {'isDefault': d.id == id});
-    }
-    await batch.commit();
+    await _api.setDefaultPaymentMethod(id);
+    // Sync to Firestore cache — update all docs
+    try {
+      final all = await _pmRef(uid).get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final d in all.docs) {
+        batch.update(d.reference, {'isDefault': d.id == id});
+      }
+      await batch.commit();
+    } catch (_) {}
   }
 
   // ──────────────────────────────────────────────────────

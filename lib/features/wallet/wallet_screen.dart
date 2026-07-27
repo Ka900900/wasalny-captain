@@ -1504,31 +1504,38 @@ class _WalletScreenState extends State<WalletScreen> {
                   },
                 ),
                 const SizedBox(height: 14),
-                // Bank account
+                // Account / InstaPay ID
                 TextFormField(
                   controller: accountCtrl,
                   style: const TextStyle(color: Colors.white),
                   decoration: _inputDecoration(
-                    'رقم الحساب / المحفظة',
-                    'مثال: 01001234567',
+                    selectedMethod?.type == 'instapay'
+                        ? 'معرف InstaPay'
+                        : 'رقم الحساب / المحفظة',
+                    selectedMethod?.type == 'instapay'
+                        ? 'مثال: user@instapay'
+                        : 'مثال: 01001234567',
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) {
-                      return 'الرجاء إدخال رقم الحساب';
+                      return selectedMethod?.type == 'instapay'
+                          ? 'الرجاء إدخال معرف InstaPay'
+                          : 'الرجاء إدخال رقم الحساب';
                     }
                     return null;
                   },
                 ),
                 const SizedBox(height: 14),
-                // Bank name (optional)
-                TextFormField(
-                  controller: bankCtrl,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: _inputDecoration(
-                    'اسم البنك (اختياري)',
-                    'البنك الأهلي',
+                // Bank name (optional — hidden for InstaPay)
+                if (selectedMethod?.type != 'instapay')
+                  TextFormField(
+                    controller: bankCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _inputDecoration(
+                      'اسم البنك (اختياري)',
+                      'البنك الأهلي',
+                    ),
                   ),
-                ),
                 const SizedBox(height: 24),
                 // Submit
                 SizedBox(
@@ -1544,13 +1551,21 @@ class _WalletScreenState extends State<WalletScreen> {
                         );
                         return;
                       }
+                      final isInstapay =
+                          selectedMethod?.type == 'instapay';
                       String? errorMsg;
                       try {
                         await ApiService.instance.requestWithdraw(
                           amount: double.parse(amountCtrl.text),
-                          bankName: selectedMethod?.label ?? bankCtrl.text,
-                          bankAccount: accountCtrl.text,
-                          accountHolder: selectedMethod?.label ?? bankCtrl.text,
+                          withdrawMethod:
+                              isInstapay ? 'INSTAPAY' : 'BANK',
+                          bankName:
+                              isInstapay ? null : (selectedMethod?.label ?? bankCtrl.text),
+                          bankAccount:
+                              isInstapay ? null : accountCtrl.text,
+                          accountHolder:
+                              isInstapay ? null : (selectedMethod?.label ?? bankCtrl.text),
+                          instapayId: isInstapay ? accountCtrl.text : null,
                         );
                       } on ApiException catch (e) {
                         errorMsg = e.message;

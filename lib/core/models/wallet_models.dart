@@ -56,9 +56,11 @@ class WithdrawRequest {
   final String id;
   final double amount;
   final String status; // 'pending' | 'approved' | 'completed' | 'rejected'
+  final String withdrawMethod; // 'BANK' | 'INSTAPAY'
   final String? bankAccount;
   final String? bankName;
   final String? accountHolder;
+  final String? instapayId; // المعرف الموحد لـ InstaPay (مثال: user@instapay)
   final DateTime createdAt;
   final DateTime? updatedAt;
   // Reference to a saved payment method (if the captain picked one)
@@ -70,9 +72,11 @@ class WithdrawRequest {
     required this.id,
     required this.amount,
     required this.status,
+    this.withdrawMethod = 'BANK',
     this.bankAccount,
     this.bankName,
     this.accountHolder,
+    this.instapayId,
     required this.createdAt,
     this.updatedAt,
     this.paymentMethodId,
@@ -85,9 +89,11 @@ class WithdrawRequest {
       id: id,
       amount: (map['amount'] as num?)?.toDouble() ?? 0,
       status: map['status'] as String? ?? 'pending',
+      withdrawMethod: map['withdrawMethod'] as String? ?? 'BANK',
       bankAccount: map['bankAccount'] as String?,
       bankName: map['bankName'] as String?,
       accountHolder: map['accountHolder'] as String?,
+      instapayId: map['instapayId'] as String?,
       createdAt: (map['createdAt'] as dynamic)?.toDate() ?? DateTime.now(),
       updatedAt: (map['updatedAt'] as dynamic)?.toDate(),
       paymentMethodId: map['paymentMethodId'] as String?,
@@ -99,9 +105,11 @@ class WithdrawRequest {
   Map<String, dynamic> toMap() => {
     'amount': amount,
     'status': status,
+    'withdrawMethod': withdrawMethod,
     'bankAccount': bankAccount,
     'bankName': bankName,
     'accountHolder': accountHolder,
+    'instapayId': instapayId,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     'paymentMethodId': paymentMethodId,
@@ -191,6 +199,7 @@ class PaymentMethod {
     this.isDefault = false,
   });
 
+  /// Creates from a Firestore snapshot (id is passed separately).
   factory PaymentMethod.fromMap(String id, Map<String, dynamic> map) {
     return PaymentMethod(
       id: id,
@@ -199,6 +208,18 @@ class PaymentMethod {
       accountNumber: map['accountNumber'] as String?,
       bankName: map['bankName'] as String?,
       isDefault: map['isDefault'] as bool? ?? false,
+    );
+  }
+
+  /// Creates from a Backend API JSON response (id is inside the map).
+  factory PaymentMethod.fromJson(Map<String, dynamic> json) {
+    return PaymentMethod(
+      id: json['id'] as String? ?? '',
+      type: json['type'] as String? ?? 'bank',
+      label: json['label'] as String? ?? '',
+      accountNumber: json['accountNumber'] as String?,
+      bankName: json['bankName'] as String?,
+      isDefault: json['isDefault'] as bool? ?? false,
     );
   }
 

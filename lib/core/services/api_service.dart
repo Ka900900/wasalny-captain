@@ -381,23 +381,31 @@ class ApiService {
     return response.data as Map<String, dynamic>;
   }
 
-  /// Request a withdrawal
+  /// Request a withdrawal.
+  /// يدعم التحويل البنكي (BANK) و InstaPay (INSTAPAY).
+  /// - للتحويل البنكي: أرسل withdrawMethod='BANK' مع bankName, bankAccount, accountHolder
+  /// - لـ InstaPay: أرسل withdrawMethod='INSTAPAY' مع instapayId (مثال: user@instapay)
   Future<Map<String, dynamic>> requestWithdraw({
     required double amount,
-    required String bankName,
-    required String bankAccount,
-    required String accountHolder,
+    String withdrawMethod = 'BANK',
+    String? bankName,
+    String? bankAccount,
+    String? accountHolder,
+    String? instapayId,
   }) async {
     if (!backendEnabled) return <String, dynamic>{'success': true};
-    final response = await _dio.post(
-      '/wallet/withdraw',
-      data: {
-        'amount': amount,
-        'bankName': bankName,
-        'bankAccount': bankAccount,
-        'accountHolder': accountHolder,
-      },
-    );
+    final data = <String, dynamic>{
+      'amount': amount,
+      'withdrawMethod': withdrawMethod,
+    };
+    if (withdrawMethod == 'BANK') {
+      data['bankName'] = bankName;
+      data['bankAccount'] = bankAccount;
+      data['accountHolder'] = accountHolder;
+    } else if (withdrawMethod == 'INSTAPAY') {
+      data['instapayId'] = instapayId;
+    }
+    final response = await _dio.post('/wallet/withdraw', data: data);
     return response.data as Map<String, dynamic>;
   }
 
@@ -437,6 +445,52 @@ class ApiService {
       '/wallet/top-up',
       data: {'amount': amount, 'paymentMethod': paymentMethod},
     );
+    return response.data as Map<String, dynamic>;
+  }
+
+  // ── Payment Methods ──────────────────────────────────
+
+  /// Get all saved payment methods for the current user.
+  Future<Map<String, dynamic>> getPaymentMethods() async {
+    if (!backendEnabled) return <String, dynamic>{};
+    await _ensureTokenLoaded();
+    final response = await _dio.get('/wallet/payment-methods');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Add a new payment method (bank / vodafone_cash / instapay).
+  Future<Map<String, dynamic>> addPaymentMethod({
+    required String type,
+    required String label,
+    String? accountNumber,
+    String? bankName,
+  }) async {
+    if (!backendEnabled) return <String, dynamic>{'success': true};
+    final response = await _dio.post(
+      '/wallet/payment-methods',
+      data: {
+        'type': type,
+        'label': label,
+        'accountNumber': accountNumber,
+        'bankName': bankName,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Delete a saved payment method by its id.
+  Future<Map<String, dynamic>> deletePaymentMethod(String id) async {
+    if (!backendEnabled) return <String, dynamic>{'success': true};
+    await _ensureTokenLoaded();
+    final response = await _dio.delete('/wallet/payment-methods/$id');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Set a payment method as the default one.
+  Future<Map<String, dynamic>> setDefaultPaymentMethod(String id) async {
+    if (!backendEnabled) return <String, dynamic>{'success': true};
+    await _ensureTokenLoaded();
+    final response = await _dio.put('/wallet/payment-methods/$id/default');
     return response.data as Map<String, dynamic>;
   }
 
