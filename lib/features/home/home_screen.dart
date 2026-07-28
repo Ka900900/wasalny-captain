@@ -888,7 +888,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           _statItem(
             icon: Icons.account_balance_wallet_outlined,
             label: 'وارد اليوم',
-            value: '${_earningsToday.toStringAsFixed(0)} ر.س',
+            value: '${_earningsToday.toStringAsFixed(0)} ج.م',
             color: AppColors.success,
           ),
           _divider(),

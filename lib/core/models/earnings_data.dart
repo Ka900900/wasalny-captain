@@ -16,8 +16,8 @@ class EarningsPeriod {
 
 /// Aggregated earnings data for a given time span.
 ///
-/// Used by the [EarningsRepository] to return Firestore‑backed (or sample)
-/// data, and consumed by the `EarningsScreen` to render charts & stats.
+/// Used by the [EarningsRepository] to return API‑backed earnings data,
+/// and consumed by the `EarningsScreen` to render charts & stats.
 class EarningsData {
   final double totalAmount;
   final int totalTrips;

@@ -82,10 +82,11 @@ class _WalletScreenState extends State<WalletScreen> {
   Future<void> _onRefresh() async {
     final uid = _uid;
     if (uid.isEmpty) return;
+    // Run all refreshes in parallel; individual failures are caught by each method
     await Future.wait([
       WalletRepository.instance.refreshWallet(uid).then((data) {
         if (mounted) setState(() => _walletData = data);
-      }),
+      }).catchError((_) {}),
       _loadTransactions(uid),
       _loadWithdrawRequests(uid),
       _loadPaymentMethods(uid),
@@ -93,32 +94,50 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Future<void> _loadTransactions(String uid) async {
-    final list = await WalletRepository.instance.fetchTransactions(uid);
-    if (mounted) {
-      setState(() {
-        _transactions = list;
-        _loadingTx = false;
-      });
+    try {
+      final list = await WalletRepository.instance.fetchTransactions(uid);
+      if (mounted) {
+        setState(() {
+          _transactions = list;
+          _loadingTx = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingTx = false);
+      }
     }
   }
 
   Future<void> _loadWithdrawRequests(String uid) async {
-    final list = await WalletRepository.instance.fetchWithdrawRequests(uid);
-    if (mounted) {
-      setState(() {
-        _withdrawRequests = list;
-        _loadingWd = false;
-      });
+    try {
+      final list = await WalletRepository.instance.fetchWithdrawRequests(uid);
+      if (mounted) {
+        setState(() {
+          _withdrawRequests = list;
+          _loadingWd = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingWd = false);
+      }
     }
   }
 
   Future<void> _loadPaymentMethods(String uid) async {
-    final list = await WalletRepository.instance.fetchPaymentMethods(uid);
-    if (mounted) {
-      setState(() {
-        _paymentMethods = list;
-        _loadingPm = false;
-      });
+    try {
+      final list = await WalletRepository.instance.fetchPaymentMethods(uid);
+      if (mounted) {
+        setState(() {
+          _paymentMethods = list;
+          _loadingPm = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingPm = false);
+      }
     }
   }
 
@@ -218,61 +237,14 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  // ── Quick actions ────────────────────────────────────
-
-  Widget _buildQuickActions() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          Expanded(
-            child: _actionButton(
-              icon: Icons.add_circle,
-              label: 'شحن عبر Kashier',
-              onTap: _showAddBalanceSheet,
-            ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _statItem('إجمالي الأرباح', data?.totalEarned ?? 0, AppColors.neonGreen),
+              const SizedBox(width: 16),
+              _statItem('إجمالي المسحوب', data?.totalWithdrawn ?? 0, Colors.redAccent),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _actionButton(
-              icon: Icons.download,
-              label: 'سحب رصيد',
-              onTap: _showWithdrawSheet,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _actionButton(
-              icon: Icons.bar_chart,
-              label: 'الأرباح',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const EarningsScreen()),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
           color: AppColors.surfaceDark,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.glassBorder),
@@ -371,10 +343,22 @@ class _WalletScreenState extends State<WalletScreen> {
       );
     }
     if (_transactions.isEmpty) {
-      return const Center(
-        child: Text(
-          'لا توجد معاملات',
-          style: TextStyle(color: AppColors.textMuted),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.receipt_long, color: AppColors.textMuted, size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              'لا توجد معاملات',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 15),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'ستظهر معاملاتك المالية هنا بعد أول رحلة',
+              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.7), fontSize: 12),
+            ),
+          ],
         ),
       );
     }
@@ -488,10 +472,22 @@ class _WalletScreenState extends State<WalletScreen> {
       );
     }
     if (_withdrawRequests.isEmpty) {
-      return const Center(
-        child: Text(
-          'لا توجد طلبات سحب',
-          style: TextStyle(color: AppColors.textMuted),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.hourglass_empty, color: AppColors.textMuted, size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              'لا توجد طلبات سحب',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 15),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'يمكنك طلب سحب رصيد من زر "سحب رصيد" بالأعلى',
+              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.7), fontSize: 12),
+            ),
+          ],
         ),
       );
     }
@@ -591,7 +587,7 @@ class _WalletScreenState extends State<WalletScreen> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
@@ -601,8 +597,126 @@ class _WalletScreenState extends State<WalletScreen> {
       child: Row(
         children: [
           // Status emoji
-          Text(r.statusIcon, style: const TextStyle(fontSize: 24)),
+          Text(r.statusIcon, style: const TextStyle(fontSize: 28)),
+          const SizedBox(width: 14),
+          // Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Amount + status badge
+                Row(
+                  children: [
+                    Text(
+                      '${r.amount.toStringAsFixed(2)} ج.م',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        r.statusLabel,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // Method
+                Row(
+                  children: [
+                    Icon(
+                      r.withdrawMethod == 'INSTAPAY'
+                          ? Icons.send
+                          : r.withdrawMethod == 'WALLET'
+                          ? Icons.account_balance_wallet
+                          : Icons.account_balance,
+                      size: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _withdrawMethodLabel(r.withdrawMethod),
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                // Date
+                Text(
+                  _formatDate(r.createdAt),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  String _withdrawMethodLabel(String method) {
+    switch (method) {
+      case 'BANK':
+        return 'تحويل بنكي';
+      case 'INSTAPAY':
+        return 'InstaPay';
+      case 'WALLET':
+        return 'محفظة إلكترونية';
+      default:
+        return method;
+    }
+  }
+
+  Widget _statItem(String label, double amount, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '${amount.toStringAsFixed(0)} ج.م',
+              style: TextStyle(
+                color: color,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -737,8 +851,19 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Future<void> _setDefaultPaymentMethod(PaymentMethod pm) async {
     if (_uid.isEmpty) return;
-    await WalletRepository.instance.setDefaultPaymentMethod(_uid, pm.id);
-    _loadPaymentMethods(_uid);
+    try {
+      await WalletRepository.instance.setDefaultPaymentMethod(_uid, pm.id);
+      _loadPaymentMethods(_uid);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('حدث خطأ أثناء تعيين طريقة الدفع الافتراضية'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   void _confirmDeletePaymentMethod(PaymentMethod pm) {
@@ -766,8 +891,22 @@ class _WalletScreenState extends State<WalletScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               if (_uid.isEmpty) return;
-              await WalletRepository.instance.deletePaymentMethod(_uid, pm.id);
-              _loadPaymentMethods(_uid);
+              try {
+                await WalletRepository.instance.deletePaymentMethod(
+                  _uid,
+                  pm.id,
+                );
+                _loadPaymentMethods(_uid);
+              } catch (_) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('حدث خطأ أثناء حذف طريقة الدفع'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('حذف', style: TextStyle(color: Colors.redAccent)),
           ),
@@ -947,16 +1086,29 @@ class _WalletScreenState extends State<WalletScreen> {
                           if (!formKey.currentState!.validate()) return;
                           if (_uid.isEmpty) return;
                           final navigator = Navigator.of(context);
-                          await WalletRepository.instance.addPaymentMethod(
-                            _uid,
-                            type: types[selectedType].type,
-                            label: labelCtrl.text.trim(),
-                            accountNumber: accountCtrl.text.trim(),
-                            bankName: isBank ? bankCtrl.text.trim() : null,
-                            isDefault: _paymentMethods.isEmpty,
-                          );
-                          if (mounted) navigator.pop();
-                          _loadPaymentMethods(_uid);
+                          try {
+                            await WalletRepository.instance.addPaymentMethod(
+                              _uid,
+                              type: types[selectedType].type,
+                              label: labelCtrl.text.trim(),
+                              accountNumber: accountCtrl.text.trim(),
+                              bankName: isBank ? bankCtrl.text.trim() : null,
+                              isDefault: _paymentMethods.isEmpty,
+                            );
+                            if (mounted) navigator.pop();
+                            _loadPaymentMethods(_uid);
+                          } catch (_) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'حدث خطأ أثناء إضافة طريقة الدفع',
+                                  ),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                          }
                         },
                         child: const Text(
                           'حفظ',
@@ -1004,10 +1156,22 @@ class _WalletScreenState extends State<WalletScreen> {
       );
     }
     if (_paymentMethods.isEmpty) {
-      return const Center(
-        child: Text(
-          'لا توجد طرق دفع',
-          style: TextStyle(color: AppColors.textMuted),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.payment, color: AppColors.textMuted, size: 48),
+            const SizedBox(height: 12),
+            const Text(
+              'لا توجد طرق دفع',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 15),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'أضف طريقة دفع جديدة لاستخدامها في السحب',
+              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.7), fontSize: 12),
+            ),
+          ],
         ),
       );
     }

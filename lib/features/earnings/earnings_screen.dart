@@ -218,10 +218,10 @@ class _EarningsScreenState extends State<EarningsScreen> {
   Widget _buildEarningsHeader(EarningsData d) {
     final formatted = d.totalAmount.toStringAsFixed(2);
     final suffix = _currentTab == EarningsTab.daily
-        ? 'أرباح هذا الأسبوع'
+        ? 'أرباح اليوم'
         : _currentTab == EarningsTab.weekly
-        ? 'أرباح هذا الشهر'
-        : 'أرباح هذا العام';
+        ? 'أرباح هذا الأسبوع'
+        : 'أرباح هذا الشهر';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
