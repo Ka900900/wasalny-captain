@@ -1003,7 +1003,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
                               // ── Vehicle Type ──────────────
                               DropdownButtonFormField<String>(
-                                initialValue: _vehicleType,
+                                value: _vehicleType,
                                 dropdownColor: AppColors.surfaceDark,
                                 style: const TextStyle(
                                   color: Colors.white,
@@ -1047,7 +1047,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
                               // ── Vehicle Model (predefined list) ──
                               DropdownButtonFormField<String>(
-                                initialValue: _selectedModel,
+                                value: _selectedModel,
                                 dropdownColor: AppColors.surfaceDark,
                                 style: const TextStyle(
                                   color: Colors.white,
