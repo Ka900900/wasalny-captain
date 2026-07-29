@@ -594,7 +594,8 @@ class ApiService {
   }
 
   /// تبديل حالة توافر الكابتن (Online/Offline) في الباك إند.
-  /// يُرسل POST إلى /driver/toggle-availability مع {'isAvailable': isAvailable}.
+  /// يُرسل PUT إلى /driver/toggle-availability مع {'isAvailable': isAvailable}.
+  /// التوك ين يضاف تلقائياً في الـ Header عبر AuthInterceptor.
   /// تُرجع true عند النجاح، false عند الفشل.
   Future<bool> toggleAvailability(bool isAvailable) async {
     if (!backendEnabled) return true;
@@ -604,7 +605,7 @@ class ApiService {
     logFine('ApiService', '[toggleAvailability] → token present: $hasToken');
 
     try {
-      await _dio.post(
+      await _dio.put(
         '/driver/toggle-availability',
         data: {'isAvailable': isAvailable},
       );
