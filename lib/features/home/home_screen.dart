@@ -352,7 +352,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           content: Text(
             'عفواً، لم نتمكن من قبول الطلب (ربما تم قبوله من كابتن آخر).',
           ),
-          backgroundColor: AppColors.warning,
+          backgroundColor: Color.fromARGB(255, 49, 49, 48),
         ),
       );
       return;
@@ -395,7 +395,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تعذر تأكيد الوصول، حاول مرة أخرى.'),
-          backgroundColor: AppColors.warning,
+          backgroundColor: Color.fromARGB(255, 43, 42, 41),
         ),
       );
     }
@@ -420,7 +420,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تعذر بدء الرحلة، حاول مرة أخرى.'),
-          backgroundColor: AppColors.warning,
+          backgroundColor: Color.fromARGB(255, 43, 42, 41),
         ),
       );
     }
@@ -445,7 +445,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تعذر إنهاء الرحلة، حاول مرة أخرى.'),
-          backgroundColor: AppColors.warning,
+          backgroundColor: Color.fromARGB(255, 48, 47, 46),
         ),
       );
     }
@@ -462,7 +462,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تعذر فتح المحادثة: بيانات الراكب غير متوفرة'),
-          backgroundColor: AppColors.error,
+          backgroundColor: Color.fromARGB(255, 250, 62, 66),
         ),
       );
       return;
@@ -510,6 +510,11 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   }
 
   Future<void> _toggleOnlineStatus() async {
+    debugPrint(
+      'TOGGLE_PRESSED: _isOnline=$_isOnline, _isToggling=$_isToggling',
+    );
+    // Guard against double-tap / race condition while a toggle is in progress
+    if (_isToggling) return;
     final newValue = !_isOnline;
 
     // Guard: cannot go offline during an active trip
@@ -518,7 +523,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('لا يمكن الإيقاف أثناء رحلة نشطة'),
-            backgroundColor: AppColors.warning,
+            backgroundColor: Color.fromARGB(255, 44, 44, 43),
           ),
         );
       }
@@ -542,48 +547,72 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     // Show loading state inside the toggle button
     setState(() => _isToggling = true);
 
-    // 1. مزامنة الحالة مع الباك إند أولاً (قبل أي تغيير محلي)
-    final backendOk = await ApiService.instance.toggleAvailability(newValue);
-    if (!backendOk) {
-      setState(() => _isToggling = false);
+    try {
+      // 1. مزامنة الحالة مع الباك إند أولاً (قبل أي تغيير محلي)
+      final backendOk = await ApiService.instance.toggleAvailability(newValue);
+      debugPrint('TOGGLE_API_RESULT: $backendOk');
+      if (!backendOk) {
+        setState(() => _isToggling = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'تعذر مزامنة حالة التوافر مع السيرفر، حاول مرة أخرى',
+              ),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return; // لا نغيّر الحالة محلياً عند الفشل
+      }
+
+      // 2. نجحت المزامنة → حدّث الواجهة محلياً
+      setState(() {
+        _isOnline = newValue;
+        _isToggling = false;
+      });
+
+      // Start/stop periodic location uploads
+      if (newValue) {
+        _startLocationUpdates();
+        // تهيئة اتصال السوكيت لبث الموقع والبيانات الحية
+        final uid = AuthService.instance.currentUser?.uid;
+        // أعد تحميل التوكن من التخزين المحلي تحسباً لكونه فارغاً في الذاكرة
+        // (مثلاً بعد إعادة تشغيل التطبيق) قبل تمريره للسوكيت.
+        await ApiService.instance.loadToken();
+        final token = ApiService.instance.getToken();
+        if (uid != null && token != null) {
+          SocketService().initSocket(uid, token);
+          debugPrint('SOCKET_INIT_SUCCESS: uid=$uid');
+        } else {
+          debugPrint('SOCKET_INIT_SKIPPED: uid=$uid, token=${token != null}');
+        }
+      } else {
+        _stopLocationUpdates();
+        // قطع اتصال السوكيت عند تحويل الكابتن إلى Offline
+        SocketService().disconnect();
+        // أوقف الاستماع لأي رحلة نشطة وأزل الطلب/الرحلة المعروضة
+        RealtimeService.instance.stopRideStatusListener();
+        _activeTripId = null;
+        if (_currentRideRequest != null) {
+          setState(() => _currentRideRequest = null);
+        }
+      }
+    } catch (e) {
+      debugPrint('TOGGLE_ERROR: $e');
       if (mounted) {
+        setState(() => _isToggling = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر مزامنة حالة التوافر مع السيرفر، حاول مرة أخرى'),
+          SnackBar(
+            content: Text(
+              'حدث خطأ أثناء تغيير الحالة: ${e.toString().replaceAll(RegExp(r'^Exception: '), '')}',
+            ),
             backgroundColor: AppColors.error,
           ),
         );
-      }
-      return; // لا نغيّر الحالة محلياً عند الفشل
-    }
-
-    // 2. نجحت المزامنة → حدّث الواجهة محلياً
-    setState(() {
-      _isOnline = newValue;
-      _isToggling = false;
-    });
-
-    // Start/stop periodic location uploads
-    if (newValue) {
-      _startLocationUpdates();
-      // تهيئة اتصال السوكيت لبث الموقع والبيانات الحية
-      final uid = AuthService.instance.currentUser?.uid;
-      // أعد تحميل التوكن من التخزين المحلي تحسباً لكونه فارغاً في الذاكرة
-      // (مثلاً بعد إعادة تشغيل التطبيق) قبل تمريره للسوكيت.
-      await ApiService.instance.loadToken();
-      final token = ApiService.instance.getToken();
-      if (uid != null && token != null) {
-        SocketService().initSocket(uid, token);
-      }
-    } else {
-      _stopLocationUpdates();
-      // قطع اتصال السوكيت عند تحويل الكابتن إلى Offline
-      SocketService().disconnect();
-      // أوقف الاستماع لأي رحلة نشطة وأزل الطلب/الرحلة المعروضة
-      RealtimeService.instance.stopRideStatusListener();
-      _activeTripId = null;
-      if (_currentRideRequest != null) {
-        setState(() => _currentRideRequest = null);
+      } else {
+        // Reset variable directly even if widget is disposed
+        _isToggling = false;
       }
     }
   }
@@ -980,7 +1009,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
               children: [
                 Icon(
                   Icons.wifi_off_rounded,
-                  color: AppColors.warning,
+                  color: const Color.fromARGB(255, 34, 34, 33),
                   size: 20,
                 ),
                 const SizedBox(width: AppSpacing.sm),
