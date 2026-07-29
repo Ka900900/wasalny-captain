@@ -19,6 +19,7 @@ import 'package:waslny_captain/core/theme/app_theme.dart';
 import 'package:waslny_captain/core/utils/logger.dart';
 import 'package:waslny_captain/features/home/home_screen.dart';
 import 'package:waslny_captain/features/auth/login_screen.dart';
+import 'package:waslny_captain/features/auth/verification_pending_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -269,7 +270,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                           child: ClipOval(
                             child: Image.asset(
-                              'assets/appstore.png',
+                              'assets/app-store.png',
                               fit: BoxFit.contain,
                             ),
                           ),
@@ -321,6 +322,60 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
+  /// بعد اكتمال التهيئة، يتحقق من حالة التحقق للكابتن المسجّل دخوله
+  /// ويوجّهه للشاشة المناسبة.
+  Future<void> _navigateBasedOnVerification() async {
+    try {
+      final data = await ApiService.instance.getProfile();
+      if (!mounted) return;
+
+      final role = data['role'] as String? ?? 'RIDER';
+      if (role == 'RIDER') {
+        // الراكب العادي (ليس كابتن) → يذهب للصفحة الرئيسية
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const CaptainHomeScreen()),
+        );
+        return;
+      }
+
+      final driverProfile = data['driverProfile'] as Map<String, dynamic>?;
+      final status =
+          driverProfile?['verificationStatus'] as String? ?? 'PENDING';
+
+      switch (status) {
+        case 'APPROVED':
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const CaptainHomeScreen()),
+          );
+          break;
+        case 'REJECTED':
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => VerificationPendingScreen(
+                initialRejectionReason:
+                    driverProfile?['rejectionReason'] as String?,
+              ),
+            ),
+          );
+          break;
+        default: // PENDING
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const VerificationPendingScreen(),
+            ),
+          );
+          break;
+      }
+    } catch (_) {
+      // آمن: إذا فشل استدعاء API التوجّه للصفحة الرئيسية
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const CaptainHomeScreen()),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder(
@@ -358,13 +413,13 @@ class _SplashScreenState extends State<SplashScreen>
           // Use a post-frame callback to schedule navigation after the build is complete.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (context) => isLoggedIn
-                      ? const CaptainHomeScreen()
-                      : const LoginScreen(),
-                ),
-              );
+              if (isLoggedIn) {
+                _navigateBasedOnVerification();
+              } else {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                );
+              }
             }
           });
         }

@@ -165,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen>
             context,
             MaterialPageRoute(
               builder: (_) => VerificationPendingScreen(
-                rejectionReason:
+                initialRejectionReason:
                     driverProfile?['rejectionReason'] as String?,
               ),
             ),

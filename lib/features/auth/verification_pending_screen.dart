@@ -4,16 +4,20 @@ import 'package:flutter/services.dart';
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
+import 'package:waslny_captain/core/services/document_upload_service.dart';
+import 'package:waslny_captain/features/verification/verification_screen.dart';
 
 /// شاشة "في انتظار التحقق" تظهر بعد تسجيل الكابتن أو إذا كانت حالته PENDING.
 ///
-/// إذا تم تمرير [rejectionReason] تُعرض كشاشة رفض مع سبب الرفض،
-/// وإلا تُعرض كشاشة انتظار مراجعة.
+/// - إذا كان [initialRejectionReason] non‑null تُعرض الشاشة كشاشة رفض.
+/// - عند فتح الشاشة يتم استدعاء API البروفايل تلقائياً للتحقق من آخر حالة.
+/// - إذا صارت الحالة APPROVED تظهر رسالة تهنئة ثم التوجيه للصفحة الرئيسية.
+/// - إذا كانت الحالة REJECTED تُعرض تفاصيل الرفض مع زر "إعادة رفع المستندات".
 class VerificationPendingScreen extends StatefulWidget {
-  /// سبب الرفض (إذا كان non‑null تعرض الشاشة كـ "تم رفض الطلب").
-  final String? rejectionReason;
+  /// سبب الرفض المبدئي (يُستخدم قبل اكتمال استدعاء API البروفايل).
+  final String? initialRejectionReason;
 
-  const VerificationPendingScreen({super.key, this.rejectionReason});
+  const VerificationPendingScreen({super.key, this.initialRejectionReason});
 
   @override
   State<VerificationPendingScreen> createState() =>
@@ -21,8 +25,35 @@ class VerificationPendingScreen extends StatefulWidget {
 }
 
 class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
+  // ── حالة الشاشة ────────────────────────────────────
   bool _isChecking = false;
   bool _isLoggingOut = false;
+  bool _isResubmitting = false;
+
+  /// الحالية المستخلصة من API البروفايل (PENDING / APPROVED / REJECTED).
+  String _status = 'PENDING';
+
+  /// سبب الرفض (يُملأ من API البروفايل).
+  String? _rejectionReason;
+
+  /// هل تم التحقق التلقائي عند فتح الشاشة؟
+  bool _initialCheckDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // نبدأ بقيمة rejectionReason المبدئية إن وُجدت
+    if (widget.initialRejectionReason != null) {
+      _status = 'REJECTED';
+      _rejectionReason = widget.initialRejectionReason;
+    }
+
+    // التحقق التلقائي من الحالة عند فتح الشاشة
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkStatus(showSnackbarOnPending: false);
+    });
+  }
 
   // ──────────────────────────────────────────────
   // تسجيل الخروج
@@ -63,12 +94,15 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
   }
 
   // ──────────────────────────────────────────────
-  // تحديث الحالة من الباك إند
+  // التحقق من الحالة من الباك إند
   // ──────────────────────────────────────────────
 
   /// يستدعي API البروفايل ويتحقق من `driverProfile.verificationStatus`.
-  /// إذا صار APPROVED يوجّه للصفحة الرئيسية، وإلا يبقى في الشاشة.
-  Future<void> _checkStatus() async {
+  ///
+  /// - APPROVED → يعرض رسالة تهنئة ثم يوجّه للصفحة الرئيسية.
+  /// - REJECTED → يُحدّث واجهة الرفض مع سبب الرفض.
+  /// - PENDING → يبقى في شاشة الانتظار.
+  Future<void> _checkStatus({bool showSnackbarOnPending = true}) async {
     setState(() => _isChecking = true);
 
     try {
@@ -76,25 +110,39 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
       if (!mounted) return;
 
       final driverProfile = data['driverProfile'] as Map<String, dynamic>?;
-      final status = driverProfile?['verificationStatus'] as String? ?? 'PENDING';
+      final status =
+          driverProfile?['verificationStatus'] as String? ?? 'PENDING';
+      final rejectionReason = driverProfile?['rejectionReason'] as String?;
 
       if (status == 'APPROVED') {
-        Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+        // ── تهانينا! الحساب مُفعّل ──
+        await _showCongratulationsDialog();
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+        }
         return;
       }
 
-      // PENDING أو REJECTED — نبقى في الشاشة
+      // تحديث حالة الرفض إن وُجدت
+      if (status == 'REJECTED' && mounted) {
+        setState(() {
+          _status = 'REJECTED';
+          _rejectionReason = rejectionReason;
+        });
+        return;
+      }
+
+      // PENDING — نبقى في الشاشة
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              status == 'REJECTED'
-                  ? 'لا يزال طلبك مرفوضًا. تواصل مع الدعم للحصول على المساعدة.'
-                  : 'طلبك لا يزال قيد المراجعة. حاول مرة أخرى لاحقًا.',
+        setState(() => _status = 'PENDING');
+        if (showSnackbarOnPending) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('طلبك لا يزال قيد المراجعة. حاول مرة أخرى لاحقًا.'),
+              backgroundColor: AppColors.warning,
             ),
-            backgroundColor: AppColors.warning,
-          ),
-        );
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -106,7 +154,104 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isChecking = false);
+      if (mounted) {
+        setState(() {
+          _isChecking = false;
+          _initialCheckDone = true;
+        });
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // رسالة التهنئة (APPROVED)
+  // ──────────────────────────────────────────────
+
+  /// عرض نافذة تهنئة عند الموافقة على طلب التسجيل.
+  Future<void> _showCongratulationsDialog() async {
+    await WaslnyDialog.show(
+      context: context,
+      title: 'تهانينا! 🎉',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: AppSpacing.md),
+          Icon(Icons.verified_rounded, size: 80, color: AppColors.success),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            'تم تفعيل حسابك بنجاح!',
+            style: AppTextStyles.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'يمكنك الآن البدء في استقبال الرحلات. مرحباً بك في واسلني كابتن!',
+            style: AppTextStyles.bodyLarge?.copyWith(
+              color: AppColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+      actions: [
+        WaslnyButton.primary(
+          label: 'بدء الرحلات',
+          icon: Icons.directions_car_rounded,
+          onPressed: () => Navigator.of(context).pop(),
+          expanded: true,
+        ),
+      ],
+    );
+  }
+
+  // ──────────────────────────────────────────────
+  // إعادة تقديم الطلب (بعد الرفض)
+  // ──────────────────────────────────────────────
+
+  /// فتح شاشة التحقق لإعادة رفع المستندات بعد الرفض.
+  Future<void> _reUploadDocuments() async {
+    final result = await Navigator.of(context).push<VerificationResult>(
+      MaterialPageRoute(builder: (_) => const VerificationScreen()),
+    );
+
+    if (result == null || !mounted) return;
+
+    // إرسال المستندات المُحدَّثة إلى الباك إند
+    setState(() => _isResubmitting = true);
+
+    try {
+      await ApiService.instance.resubmitApplication(
+        idCardUrl: result.uploadedUrls[UploadDocType.idFront],
+        idCardBackUrl: result.uploadedUrls[UploadDocType.idBack],
+        licenseUrl: result.uploadedUrls[UploadDocType.license],
+        faceUrl: result.uploadedUrls[UploadDocType.face],
+      );
+
+      if (!mounted) return;
+
+      // العودة لشاشة الانتظار (تم التقديم بنجاح)
+      setState(() {
+        _status = 'PENDING';
+        _rejectionReason = null;
+        _isResubmitting = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إرسال المستندات بنجاح. سيتم مراجعتها قريباً.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isResubmitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل إعادة تقديم الطلب: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -116,7 +261,7 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isRejected = widget.rejectionReason != null;
+    final bool isRejected = _status == 'REJECTED';
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -164,7 +309,7 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
                   // ── Subtitle ───────────────────────────
                   Text(
                     isRejected
-                        ? 'للأسف، لم يتم الموافقة على طلب تسجيلك.'
+                        ? 'للأسف، لم تتم الموافقة على طلب تسجيلك بسبب مشاكل في المستندات.'
                         : 'سيتم مراجعة بياناتك من قبل فريقنا خلال 24-48 ساعة',
                     style: AppTextStyles.bodyLarge?.copyWith(
                       color: AppColors.textSecondary,
@@ -173,15 +318,18 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
                   ),
 
                   // ── Rejection reason ───────────────────
-                  if (isRejected && widget.rejectionReason!.isNotEmpty) ...[
+                  if (isRejected &&
+                      _rejectionReason != null &&
+                      _rejectionReason!.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.lg),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(AppSpacing.lg),
                       decoration: BoxDecoration(
                         color: AppColors.error.withValues(alpha: 0.08),
-                        borderRadius:
-                            BorderRadius.circular(AppSpacing.radiusMd),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusMd,
+                        ),
                         border: Border.all(
                           color: AppColors.error.withValues(alpha: 0.25),
                         ),
@@ -197,7 +345,7 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
                           ),
                           const SizedBox(height: AppSpacing.xs),
                           Text(
-                            widget.rejectionReason!,
+                            _rejectionReason!,
                             style: AppTextStyles.bodyMedium?.copyWith(
                               color: AppColors.textPrimary,
                             ),
@@ -207,14 +355,25 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
                     ),
                   ],
 
-                  const SizedBox(height: AppSpacing.xxxl),
+                  const SizedBox(height: AppSpacing.xxl),
+
+                  // ── Re-upload button (REJECTED only) ──
+                  if (isRejected) ...[
+                    WaslnyButton.primary(
+                      label: 'إعادة رفع المستندات',
+                      icon: Icons.upload_file_rounded,
+                      loading: _isResubmitting,
+                      onPressed: _isResubmitting ? null : _reUploadDocuments,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
 
                   // ── Refresh status button ──────────────
-                  WaslnyButton.primary(
+                  WaslnyButton.outline(
                     label: 'تحديث الحالة',
                     icon: Icons.refresh_rounded,
                     loading: _isChecking,
-                    onPressed: _isChecking ? null : _checkStatus,
+                    onPressed: _isChecking ? null : () => _checkStatus(),
                   ),
 
                   const SizedBox(height: AppSpacing.md),

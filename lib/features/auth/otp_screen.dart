@@ -215,7 +215,7 @@ class _OTPScreenState extends State<OTPScreen>
             context,
             MaterialPageRoute(
               builder: (_) => VerificationPendingScreen(
-                rejectionReason:
+                initialRejectionReason:
                     driverProfile?['rejectionReason'] as String?,
               ),
             ),

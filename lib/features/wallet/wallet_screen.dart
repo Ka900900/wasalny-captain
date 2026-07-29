@@ -38,9 +38,6 @@ class _WalletScreenState extends State<WalletScreen> {
 
   String _uid = '';
 
-  // Error shown when a withdrawal is submitted without picking a method
-  String? _methodError;
-
   @override
   void initState() {
     super.initState();
@@ -84,9 +81,12 @@ class _WalletScreenState extends State<WalletScreen> {
     if (uid.isEmpty) return;
     // Run all refreshes in parallel; individual failures are caught by each method
     await Future.wait([
-      WalletRepository.instance.refreshWallet(uid).then((data) {
-        if (mounted) setState(() => _walletData = data);
-      }).catchError((_) {}),
+      WalletRepository.instance
+          .refreshWallet(uid)
+          .then((data) {
+            if (mounted) setState(() => _walletData = data);
+          })
+          .catchError((_) {}),
       _loadTransactions(uid),
       _loadWithdrawRequests(uid),
       _loadPaymentMethods(uid),
@@ -240,11 +240,73 @@ class _WalletScreenState extends State<WalletScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              _statItem('إجمالي الأرباح', data?.totalEarned ?? 0, AppColors.neonGreen),
+              _statItem(
+                'إجمالي الأرباح',
+                data?.totalEarned ?? 0,
+                AppColors.neonGreen,
+              ),
               const SizedBox(width: 16),
-              _statItem('إجمالي المسحوب', data?.totalWithdrawn ?? 0, Colors.redAccent),
+              _statItem(
+                'إجمالي المسحوب',
+                data?.totalWithdrawn ?? 0,
+                Colors.redAccent,
+              ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  // ── Quick actions ────────────────────────────────────
+
+  Widget _buildQuickActions() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.add_circle_outline,
+              label: 'إضافة رصيد',
+              onTap: _showAddBalanceSheet,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.credit_card,
+              label: 'سحب رصيد',
+              onTap: _showWithdrawSheet,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.account_balance,
+              label: 'الأرباح',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const EarningsScreen()),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
           color: AppColors.surfaceDark,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.glassBorder),
@@ -260,6 +322,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -347,7 +410,11 @@ class _WalletScreenState extends State<WalletScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.receipt_long, color: AppColors.textMuted, size: 48),
+            const Icon(
+              Icons.receipt_long,
+              color: AppColors.textMuted,
+              size: 48,
+            ),
             const SizedBox(height: 12),
             const Text(
               'لا توجد معاملات',
@@ -356,7 +423,10 @@ class _WalletScreenState extends State<WalletScreen> {
             const SizedBox(height: 6),
             Text(
               'ستظهر معاملاتك المالية هنا بعد أول رحلة',
-              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.7), fontSize: 12),
+              style: TextStyle(
+                color: AppColors.textMuted.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -476,7 +546,11 @@ class _WalletScreenState extends State<WalletScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.hourglass_empty, color: AppColors.textMuted, size: 48),
+            const Icon(
+              Icons.hourglass_empty,
+              color: AppColors.textMuted,
+              size: 48,
+            ),
             const SizedBox(height: 12),
             const Text(
               'لا توجد طلبات سحب',
@@ -485,7 +559,10 @@ class _WalletScreenState extends State<WalletScreen> {
             const SizedBox(height: 6),
             Text(
               'يمكنك طلب سحب رصيد من زر "سحب رصيد" بالأعلى',
-              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.7), fontSize: 12),
+              style: TextStyle(
+                color: AppColors.textMuted.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -1098,7 +1175,7 @@ class _WalletScreenState extends State<WalletScreen> {
                             if (mounted) navigator.pop();
                             _loadPaymentMethods(_uid);
                           } catch (_) {
-                            if (mounted) {
+                            if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
@@ -1169,7 +1246,10 @@ class _WalletScreenState extends State<WalletScreen> {
             const SizedBox(height: 6),
             Text(
               'أضف طريقة دفع جديدة لاستخدامها في السحب',
-              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.7), fontSize: 12),
+              style: TextStyle(
+                color: AppColors.textMuted.withValues(alpha: 0.7),
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -1407,7 +1487,7 @@ class _WalletScreenState extends State<WalletScreen> {
                                     ),
                                   );
 
-                                  if (!mounted) return;
+                                  if (!context.mounted) return;
 
                                   // Step 3: Refresh wallet data
                                   _loadTransactions(uid);
@@ -1802,7 +1882,7 @@ class _PaymentMethodChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
           color: selected
-              ? AppColors.primary.withOpacity(0.15)
+              ? AppColors.primary.withValues(alpha: 0.15)
               : Colors.white10,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(

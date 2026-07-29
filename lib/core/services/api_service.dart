@@ -732,4 +732,61 @@ class ApiService {
     );
     return response.data as Map<String, dynamic>;
   }
+
+  /// Resubmit the captain's application after rejection.
+  ///
+  /// Sends updated document URLs to the backend so the admin can re-review
+  /// the application. The backend updates the driver's documents and sets
+  /// [verificationStatus] back to PENDING.
+  ///
+  /// Returns the backend response map on success.
+  /// Throws [ApiException] on failure.
+  Future<Map<String, dynamic>> resubmitApplication({
+    String? idCardUrl,
+    String? idCardBackUrl,
+    String? licenseUrl,
+    String? licenseBackUrl,
+    String? vehicleLicenseFrontUrl,
+    String? vehicleLicenseBackUrl,
+    String? criminalRecordUrl,
+    String? drugTestUrl,
+    String? carPhotoUrl,
+    String? faceUrl,
+  }) async {
+    if (!backendEnabled) return <String, dynamic>{'success': true};
+
+    final Map<String, dynamic> payload = {
+      if (idCardUrl != null && idCardUrl.isNotEmpty) 'idCardUrl': idCardUrl,
+      if (idCardBackUrl != null && idCardBackUrl.isNotEmpty)
+        'idCardBackUrl': idCardBackUrl,
+      if (licenseUrl != null && licenseUrl.isNotEmpty) 'licenseUrl': licenseUrl,
+      if (licenseBackUrl != null && licenseBackUrl.isNotEmpty)
+        'licenseBackUrl': licenseBackUrl,
+      if (vehicleLicenseFrontUrl != null && vehicleLicenseFrontUrl.isNotEmpty)
+        'vehicleLicenseFrontUrl': vehicleLicenseFrontUrl,
+      if (vehicleLicenseBackUrl != null && vehicleLicenseBackUrl.isNotEmpty)
+        'vehicleLicenseBackUrl': vehicleLicenseBackUrl,
+      if (criminalRecordUrl != null && criminalRecordUrl.isNotEmpty)
+        'criminalRecordUrl': criminalRecordUrl,
+      if (drugTestUrl != null && drugTestUrl.isNotEmpty)
+        'drugTestUrl': drugTestUrl,
+      if (carPhotoUrl != null && carPhotoUrl.isNotEmpty)
+        'carPhotoUrl': carPhotoUrl,
+      if (faceUrl != null && faceUrl.isNotEmpty) 'faceUrl': faceUrl,
+    };
+
+    try {
+      final response = await _dio.post(
+        '/auth/resubmit-application',
+        data: payload,
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw ApiException(
+        message:
+            _extractBackendMessage(e) ??
+            'فشل إعادة تقديم الطلب (${e.response?.statusCode})',
+      );
+    }
+  }
 }
