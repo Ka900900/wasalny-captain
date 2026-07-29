@@ -755,7 +755,14 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     return Stack(
       children: [
         // ── 1. Full-screen map (always visible) ───────────
-        Positioned.fill(
+        // Restrict map area to start below the toggle button row
+        // so the Platform View (AndroidView) does NOT intercept
+        // touches on the online toggle button.
+        Positioned(
+          top: 100,
+          left: 0,
+          right: 0,
+          bottom: 0,
           child: HomeMapWidget(
             mapController: mapController,
             locationGranted: _locationGranted,
