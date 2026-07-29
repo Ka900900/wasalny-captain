@@ -36,9 +36,6 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
   /// سبب الرفض (يُملأ من API البروفايل).
   String? _rejectionReason;
 
-  /// هل تم التحقق التلقائي عند فتح الشاشة؟
-  bool _initialCheckDone = false;
-
   @override
   void initState() {
     super.initState();
@@ -86,7 +83,7 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('حدث خطأ أثناء تسجيل الخروج: $e'),
-            backgroundColor: AppColors.error,
+            backgroundColor: const Color.fromARGB(255, 49, 47, 47),
           ),
         );
       }
@@ -139,7 +136,7 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('طلبك لا يزال قيد المراجعة. حاول مرة أخرى لاحقًا.'),
-              backgroundColor: AppColors.warning,
+              backgroundColor: const Color.fromARGB(255, 27, 27, 27),
             ),
           );
         }
@@ -149,7 +146,7 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('تعذر التحقق من الحالة: $e'),
-            backgroundColor: AppColors.error,
+            backgroundColor: const Color.fromARGB(255, 31, 29, 29),
           ),
         );
       }
@@ -157,7 +154,6 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
       if (mounted) {
         setState(() {
           _isChecking = false;
-          _initialCheckDone = true;
         });
       }
     }
@@ -282,8 +278,8 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
                     height: 96,
                     decoration: BoxDecoration(
                       color: isRejected
-                          ? AppColors.error.withValues(alpha: 0.12)
-                          : AppColors.warning.withValues(alpha: 0.12),
+                          ? const Color.fromARGB(255, 71, 68, 68).withValues(alpha: 0.12)
+                          : const Color.fromARGB(255, 24, 23, 23).withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
@@ -291,7 +287,7 @@ class _VerificationPendingScreenState extends State<VerificationPendingScreen> {
                           ? Icons.cancel_rounded
                           : Icons.access_time_rounded,
                       size: 48,
-                      color: isRejected ? AppColors.error : AppColors.warning,
+                      color: isRejected ? AppColors.error : const Color.fromARGB(255, 39, 38, 37),
                     ),
                   ),
 

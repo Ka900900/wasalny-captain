@@ -788,11 +788,18 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
               ),
               // زر الأونلاين / الأوفلاين (يسار حسب اتجاه RTL)
               if (_currentRideRequest == null)
-                OnlineToggleButton(
-                  isOnline: _isOnline,
-                  hasActiveTrip: _activeTripId != null,
-                  isLoading: _isToggling,
-                  onToggle: (newValue) => _toggleOnlineStatus(),
+                Builder(
+                  builder: (_) {
+                    debugPrint(
+                      'BUILD TOGGLE BUTTON: isOnline=$_isOnline, isToggling=$_isToggling, activeTripId=$_activeTripId',
+                    );
+                    return OnlineToggleButton(
+                      isOnline: _isOnline,
+                      hasActiveTrip: false, // مؤقتاً hardcode للاختبار
+                      isLoading: _isToggling,
+                      onToggle: (newValue) => _toggleOnlineStatus(),
+                    );
+                  },
                 ),
             ],
           ),

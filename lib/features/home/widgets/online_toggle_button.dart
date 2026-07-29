@@ -71,7 +71,15 @@ class _OnlineToggleButtonState extends State<OnlineToggleButton>
   }
 
   void _handleTap() {
-    HapticFeedback.heavyImpact();
+    debugPrint(
+      'OnlineToggleButton clicked! current isOnline: ${widget.isOnline}',
+    );
+    try {
+      HapticFeedback.heavyImpact();
+    } catch (_) {
+      // Some devices/platforms may not support heavy impact haptics;
+      // silently ignore to avoid blocking the toggle callback.
+    }
     widget.onToggle(!widget.isOnline);
   }
 
