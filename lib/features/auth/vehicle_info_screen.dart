@@ -109,6 +109,15 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
     'motorcycle': 'MOTORCYCLE',
   };
 
+  /// عكس [_vehicleTypeToBackend] — يحول القيمة من الباك إند إلى القيمة
+  /// المستخدمة في التطبيق لتعبئة الحقول مسبقاً عند فتح الشاشة.
+  static const Map<String, String> _backendToFrontendType = {
+    'PRIVATE_CAR': 'private',
+    'TAXI': 'taxi',
+    'SCOOTER': 'scooter',
+    'MOTORCYCLE': 'motorcycle',
+  };
+
   /// قائمة جاهزة بأشهر ماركات وموديلات السيارات (ملاكي/تاكسي)،
   /// مرتّبة حسب الماركة/الفئة لسهولة الاختيار في القائمة المنسدلة.
   static const Map<String, List<String>> _carModelsByCategory = {
@@ -307,11 +316,55 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   // Load existing profile
   // ──────────────────────────────────────────────────────
 
+  /// يجلب بيانات البروفايل الحالية من الباك إند ويعبي الحقول تلقائياً.
+  /// إذا كان الكابتن مسجلًا بالفعل، تظهر بياناته (موديل العربية، اللون، اللوحة،
+  /// الصور، إلخ) بدون الحاجة لإعادة إدخالها.
   Future<void> _loadProfile() async {
-    // No Firestore read needed — backend API is the source of truth.
-    // Form is used only for new registration (existing users skip to /home).
-    if (mounted) {
-      setState(() => _isLoading = false);
+    try {
+      final result = await ApiService.instance.getProfile();
+      if (!mounted) return;
+
+      final captain = result['captain'] as Map<String, dynamic>?;
+      if (captain != null) {
+        // تعيين نوع المركبة من الباك إند
+        final backendType = captain['vehicleType'] as String?;
+        if (backendType != null &&
+            _backendToFrontendType.containsKey(backendType)) {
+          _vehicleType = _backendToFrontendType[backendType]!;
+        }
+
+        // تعيين موديل المركبة
+        _selectedModel = captain['carModel'] as String?;
+
+        // تعبئة حقول النصوص
+        _colorController.text = captain['carColor'] as String? ?? '';
+        _plateController.text = captain['carPlateNumber'] as String? ?? '';
+        _licenseNumberCtrl.text = captain['licenseNumber'] as String? ?? '';
+
+        // تعبئة روابط الصور الموجودة مسبقاً
+        _carPhotoUrl = captain['carPhotoUrl'] as String?;
+        _idCardUrl = captain['idCardUrl'] as String?;
+        _idCardBackUrl = captain['idCardBackUrl'] as String?;
+        _licenseUrl = captain['licenseUrl'] as String?;
+        _licenseBackUrl = captain['licenseBackUrl'] as String?;
+        _vehicleLicenseFrontUrl = captain['vehicleLicenseFrontUrl'] as String?;
+        _vehicleLicenseBackUrl = captain['vehicleLicenseBackUrl'] as String?;
+        _criminalRecordUrl = captain['criminalRecordUrl'] as String?;
+        _drugTestUrl = captain['drugTestUrl'] as String?;
+
+        // تعبئة بيانات Google إذا كانت موجودة في الباك إند
+        if (captain['name'] != null) {
+          _googleName ??= captain['name'] as String;
+        }
+        if (captain['phoneNumber'] != null) {
+          _phoneNumber ??= captain['phoneNumber'] as String;
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ _loadProfile error — form will be empty: $e');
+      // في حالة فشل الاتصال، تظهر الشاشة فارغة والكابتن يملأ البيانات يدوياً
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -756,14 +809,14 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
       // Navigate to verification pending (new registration is always PENDING)
       debugPrint('═══════════════════════════════════════════════════');
-      debugPrint('✅ _save → registerDriver SUCCESS — navigating to verification pending');
+      debugPrint(
+        '✅ _save → registerDriver SUCCESS — navigating to verification pending',
+      );
       debugPrint('═══════════════════════════════════════════════════');
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (_) => const VerificationPendingScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const VerificationPendingScreen()),
           (_) => false,
         );
       }
