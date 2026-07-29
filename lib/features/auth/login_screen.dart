@@ -77,8 +77,17 @@ class _LoginScreenState extends State<LoginScreen>
           backendPhone.isEmpty ||
           backendPhone.startsWith('firebase:');
 
-      // 3. Check if driver is registered on the backend → Onboarding or Home
-      final isRegistered = await ApiService.instance.isDriverRegistered();
+      // 3. استخدم getProfile() للتحقق من وجود الكابتن في الباك إند
+      //    (بديلاً عن isDriverRegistered() التي تستخدم endpoint /driver/earnings غير دقيق)
+      bool isRegistered = false;
+      try {
+        final profileData = await ApiService.instance.getProfile();
+        isRegistered = profileData['driverProfile'] != null;
+      } catch (_) {
+        // فشل getProfile() (404 أو خطأ شبكة) → نعتبر المستخدم جديدًا
+        isRegistered = false;
+      }
+
       if (mounted) {
         if (isRegistered && !needsPhoneEntry) {
           // Existing user with real phone – check verification status
@@ -235,7 +244,7 @@ class _LoginScreenState extends State<LoginScreen>
                 keyboardType: TextInputType.phone,
                 textDirection: TextDirection.ltr,
                 decoration: const InputDecoration(
-                  hintText: '+212 6XX XX XX XX',
+                  hintText: '+20 1XX XXX XXXX',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.phone),
                 ),
@@ -252,9 +261,9 @@ class _LoginScreenState extends State<LoginScreen>
               onPressed: () {
                 final phone = phoneController.text.trim();
                 if (phone.isEmpty) return;
-                // Basic validation: must start with + and have 8-15 digits
+                // Basic validation: must start with +20 and be a valid Egyptian phone (9-15 digits)
                 final clean = phone.replaceAll(RegExp(r'[\s\-]'), '');
-                if (!RegExp(r'^\+?\d{8,15}$').hasMatch(clean)) {
+                if (!RegExp(r'^\+?\d{9,15}$').hasMatch(clean)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('صيغة رقم الهاتف غير صحيحة'),
