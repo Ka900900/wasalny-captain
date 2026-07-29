@@ -6,7 +6,6 @@ import 'package:waslny_captain/widgets/image_source_picker.dart';
 
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
-import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/image_upload_service.dart';
@@ -92,13 +91,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
-      // تحديث حقول photoUrl + profilePic في Firestore (merge — دون مسح باقي الحقول)
-      // نحتاج نحدّث `profilePic` عشان CaptainModel (اللي بيستخدمه Stream تاني)
-      // يشوف الصورة الجديدة فورًا من غير ما يفضل عالق على الصورة القديمة من Google.
-      await DriverRepository.instance.updateProfile(
-        uid: uid,
-        updates: {'photoUrl': imageUrl, 'profilePic': imageUrl},
-      );
+      // تحديث صورة الملف الشخصي عبر الباك إند (API) بدلاً من Firestore
+      await ApiService.instance.updateProfile(avatarUrl: imageUrl);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

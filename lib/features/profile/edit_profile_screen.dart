@@ -6,6 +6,7 @@ import 'package:waslny_captain/widgets/image_source_picker.dart';
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
 import 'package:waslny_captain/core/repositories/driver_repository.dart';
+import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/image_upload_service.dart';
 
@@ -100,12 +101,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setLocal(url);
       if (mounted) setState(() {});
 
-      // تحديث حقل Firestore مباشرةً (merge — دون مسح باقي الحقول)
+      // تحديث الصورة عبر الباك إند (API) بدلاً من Firestore
       if (uid != null) {
-        await DriverRepository.instance.updateProfile(
-          uid: uid,
-          updates: {firestoreField: url},
-        );
+        await ApiService.instance.updateProfile(avatarUrl: url);
       }
     } catch (_) {
       if (mounted) _showUploadError(label);
@@ -136,17 +134,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setLocal: (url) => _photoUrl = url,
       label: 'الصورة الشخصية',
     );
-
-    // بعد رفع الصورة، نحدّث `profilePic` عشان CaptainModel يشوف التغيير
-    if (_photoUrl != null && _photoUrl!.isNotEmpty) {
-      final uid = AuthService.instance.currentUser?.uid;
-      if (uid != null) {
-        await DriverRepository.instance.updateProfile(
-          uid: uid,
-          updates: {'profilePic': _photoUrl},
-        );
-      }
-    }
   }
 
   /// Builds a clickable image tile (existing URL or local file).
@@ -243,17 +230,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         return;
       }
       final uid = user.uid;
+
+      // 1. حفظ الاسم والصورة عبر الباك إند (API)
+      final name = _nameCtrl.text.trim();
+      final nameParts = name.split(' ');
+      final firstName = nameParts.isNotEmpty ? nameParts.first : '';
+      final lastName = nameParts.length > 1
+          ? nameParts.sublist(1).join(' ')
+          : '';
+      await ApiService.instance.updateProfile(
+        firstName: firstName,
+        lastName: lastName,
+        avatarUrl: _photoUrl,
+      );
+
+      // 2. حفظ رقم الهاتف عبر الباك إند (endpoint منفصل)
+      await ApiService.instance.updatePhoneNumber(
+        phoneNumber: _phoneCtrl.text.trim(),
+      );
+
+      // 3. حفظ الرقم القومي في Firestore كاحتياط (لا يوجد endpoint في الباك إند حالياً)
+      //    لحين إضافة endpoint له في المستقبل
       final repo = DriverRepository.instance;
-
-      // صور الكابتن تُرفع مباشرةً إلى Cloudinary عند اختيارها وتُحدَّث
-      // حقول Firestore الخاصة بها (photoUrl/licenseUrl/idCardUrl) فورًا،
-      // لذا نُبقي قيم المتغيرات المحلية كما هي ونكتفي بحفظ باقي الحقول النصية.
-
-      // 2. Build the profile object
       final now = DateTime.now();
       final profile = DriverProfile(
         uid: uid,
-        name: _nameCtrl.text.trim(),
+        name: name,
         phone: _phoneCtrl.text.trim(),
         photoUrl: _photoUrl,
         nationalId: _nationalIdCtrl.text.trim(),
@@ -265,8 +267,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         createdAt: widget.profile?.createdAt ?? now,
         updatedAt: now,
       );
-
-      // 3. Persist to Firestore
       await repo.saveProfile(profile);
 
       if (mounted) {
