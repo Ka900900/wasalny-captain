@@ -324,40 +324,48 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
       final result = await ApiService.instance.getProfile();
       if (!mounted) return;
 
-      final captain = result['captain'] as Map<String, dynamic>?;
-      if (captain != null) {
+      // 🔴 كان هنا result['captain'] وهو خطأ — الباك إند ترجع البيانات
+      //    تحت مفتاح driverProfile وليس captain.
+      final driverProfile = result['driverProfile'] as Map<String, dynamic>?;
+      if (driverProfile != null) {
         // تعيين نوع المركبة من الباك إند
-        final backendType = captain['vehicleType'] as String?;
+        final backendType = driverProfile['vehicleType'] as String?;
         if (backendType != null &&
             _backendToFrontendType.containsKey(backendType)) {
           _vehicleType = _backendToFrontendType[backendType]!;
         }
 
         // تعيين موديل المركبة
-        _selectedModel = captain['carModel'] as String?;
+        _selectedModel = driverProfile['carModel'] as String?;
 
         // تعبئة حقول النصوص
-        _colorController.text = captain['carColor'] as String? ?? '';
-        _plateController.text = captain['carPlateNumber'] as String? ?? '';
-        _licenseNumberCtrl.text = captain['licenseNumber'] as String? ?? '';
+        _colorController.text = driverProfile['carColor'] as String? ?? '';
+        _plateController.text =
+            driverProfile['carPlateNumber'] as String? ?? '';
+        _licenseNumberCtrl.text =
+            driverProfile['licenseNumber'] as String? ?? '';
 
         // تعبئة روابط الصور الموجودة مسبقاً
-        _carPhotoUrl = captain['carPhotoUrl'] as String?;
-        _idCardUrl = captain['idCardUrl'] as String?;
-        _idCardBackUrl = captain['idCardBackUrl'] as String?;
-        _licenseUrl = captain['licenseUrl'] as String?;
-        _licenseBackUrl = captain['licenseBackUrl'] as String?;
-        _vehicleLicenseFrontUrl = captain['vehicleLicenseFrontUrl'] as String?;
-        _vehicleLicenseBackUrl = captain['vehicleLicenseBackUrl'] as String?;
-        _criminalRecordUrl = captain['criminalRecordUrl'] as String?;
-        _drugTestUrl = captain['drugTestUrl'] as String?;
+        // ملاحظة: الباك إند تخزّن idCardUrl تحت اسم idPhotoFront
+        //          وتخزّن licenseUrl تحت اسم licensePhoto
+        _carPhotoUrl = driverProfile['carPhotoUrl'] as String?;
+        _idCardUrl = driverProfile['idPhotoFront'] as String?;
+        _idCardBackUrl = driverProfile['idCardBackUrl'] as String?;
+        _licenseUrl = driverProfile['licensePhoto'] as String?;
+        _licenseBackUrl = driverProfile['licenseBackUrl'] as String?;
+        _vehicleLicenseFrontUrl =
+            driverProfile['vehicleLicenseFrontUrl'] as String?;
+        _vehicleLicenseBackUrl =
+            driverProfile['vehicleLicenseBackUrl'] as String?;
+        _criminalRecordUrl = driverProfile['criminalRecordUrl'] as String?;
+        _drugTestUrl = driverProfile['drugTestUrl'] as String?;
 
         // تعبئة بيانات Google إذا كانت موجودة في الباك إند
-        if (captain['name'] != null) {
-          _googleName ??= captain['name'] as String;
+        if (driverProfile['name'] != null) {
+          _googleName ??= driverProfile['name'] as String;
         }
-        if (captain['phoneNumber'] != null) {
-          _phoneNumber ??= captain['phoneNumber'] as String;
+        if (driverProfile['phoneNumber'] != null) {
+          _phoneNumber ??= driverProfile['phoneNumber'] as String;
         }
       }
     } catch (e) {

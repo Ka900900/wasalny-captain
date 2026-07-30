@@ -257,37 +257,47 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     try {
       final result = await ApiService.instance.getProfile();
       if (!mounted) return;
-      final captainData = result['captain'] as Map<String, dynamic>?;
-      if (captainData == null) return;
+      // 🔴 كان هنا result['captain'] وهو خطأ — الباك إند ترجع البيانات
+      //    تحت مفتاح driverProfile (وليس captain).
+      final driverProfile = result['driverProfile'] as Map<String, dynamic>?;
+      if (driverProfile == null) return;
       final uid = AuthService.instance.currentUser?.uid ?? '';
+
+      // اسم الكابتن من الحقول الرئيسية (firstName + lastName)
+      final firstName = result['firstName'] as String? ?? '';
+      final lastName = result['lastName'] as String? ?? '';
+      final name = [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
+
       final profile = DriverProfile(
-        uid: captainData['firebaseUid'] as String? ?? uid,
-        name: captainData['name'] as String? ?? '',
-        phone: captainData['phone'] as String? ?? '',
-        photoUrl: captainData['photoUrl'] as String?,
-        carPhotoUrl: captainData['carPhotoUrl'] as String?,
+        uid: result['id'] as String? ?? uid,
+        name: name.isNotEmpty ? name : (driverProfile['name'] as String? ?? ''),
+        phone: result['phoneNumber'] as String? ?? '',
+        photoUrl: result['avatarUrl'] as String?,
+        carPhotoUrl: driverProfile['carPhotoUrl'] as String?,
         nationalId: null,
-        idCardUrl: captainData['idCardUrl'] as String?,
-        idCardBackUrl: captainData['idCardBackUrl'] as String?,
-        vehicleType: captainData['vehicleType'] as String? ?? '',
-        vehicleModel: captainData['vehicleModel'] as String? ?? '',
-        vehicleColor: captainData['vehicleColor'] as String? ?? '',
-        vehicleNumber: captainData['vehicleNumber'] as String? ?? '',
-        licenseUrl: captainData['licenseUrl'] as String?,
-        licenseBackUrl: captainData['licenseBackUrl'] as String?,
-        licenseNumber: captainData['licenseNumber'] as String?,
-        insuranceUrl: captainData['insuranceUrl'] as String?,
-        criminalRecordUrl: captainData['criminalRecordUrl'] as String?,
-        drugTestUrl: captainData['drugTestUrl'] as String?,
+        // الباك إند تخزّن idCardUrl تحت اسم idPhotoFront
+        idCardUrl: driverProfile['idPhotoFront'] as String?,
+        idCardBackUrl: driverProfile['idCardBackUrl'] as String?,
+        vehicleType: driverProfile['vehicleType'] as String? ?? '',
+        vehicleModel: driverProfile['carModel'] as String? ?? '',
+        vehicleColor: driverProfile['carColor'] as String? ?? '',
+        vehicleNumber: driverProfile['carPlateNumber'] as String? ?? '',
+        // الباك إند تخزّن licenseUrl تحت اسم licensePhoto
+        licenseUrl: driverProfile['licensePhoto'] as String?,
+        licenseBackUrl: driverProfile['licenseBackUrl'] as String?,
+        licenseNumber: driverProfile['licenseNumber'] as String?,
+        insuranceUrl: driverProfile['insuranceUrl'] as String?,
+        criminalRecordUrl: driverProfile['criminalRecordUrl'] as String?,
+        drugTestUrl: driverProfile['drugTestUrl'] as String?,
         documentsGraceEndsAt: null,
         isBanned: false,
         banUntil: null,
-        rating: (captainData['rating'] as num?)?.toDouble(),
-        createdAt: captainData['createdAt'] != null
-            ? DateTime.parse(captainData['createdAt'] as String)
+        rating: (driverProfile['rating'] as num?)?.toDouble(),
+        createdAt: result['createdAt'] != null
+            ? DateTime.parse(result['createdAt'] as String)
             : DateTime.now(),
-        updatedAt: captainData['updatedAt'] != null
-            ? DateTime.parse(captainData['updatedAt'] as String)
+        updatedAt: result['updatedAt'] != null
+            ? DateTime.parse(result['updatedAt'] as String)
             : DateTime.now(),
       );
       setState(() => _profile = profile);
