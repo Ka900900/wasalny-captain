@@ -53,10 +53,20 @@ class SocketService {
 
     // استقبال طلبات الرحلات الجديدة (بديل عن مستمع Firestore العام).
     // الباك إند يبثّ الحدث لمرة واحدة للكابتن المخصّص له فقط.
+    // ⚠️  بعض إصدارات الباك إند تُغلّف البيانات داخل مفتاح "ride":
+    //     {"ride": {rideId, pickupAddress, ...}}
+    //     وأخرى ترسلها مباشرة:
+    //     {rideId, pickupAddress, ...}
+    //     نتعامل مع الحالتين.
     socket!.on('ride.new_available', (data) {
       if (data is Map) {
         try {
-          final ride = RideModel.fromJson(Map<String, dynamic>.from(data));
+          final map = Map<String, dynamic>.from(data);
+          // إذا كانت البيانات مغلّفة داخل مفتاح ride، نفكّها
+          final inner = (map['ride'] ?? map['data'] ?? map['trip']) as Map?;
+          final ride = RideModel.fromJson(
+            inner != null ? Map<String, dynamic>.from(inner) : map,
+          );
           onNewAvailableRide?.call(ride);
         } catch (e) {
           log('⚠️ خطأ في تحليل بيانات الرحلة من السوكيت: $e');

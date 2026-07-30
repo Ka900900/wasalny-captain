@@ -20,6 +20,7 @@ class RideModel {
   final String id;
   final String? riderId;
   final String? riderName;
+  final String? riderPhone;
   final String? pickupAddress;
   final String? destinationAddress;
   final double? pickupLat;
@@ -37,6 +38,7 @@ class RideModel {
     required this.id,
     this.riderId,
     this.riderName,
+    this.riderPhone,
     this.pickupAddress,
     this.destinationAddress,
     this.pickupLat,
@@ -56,6 +58,7 @@ class RideModel {
     String? id,
     String? riderId,
     String? riderName,
+    String? riderPhone,
     String? pickupAddress,
     String? destinationAddress,
     double? pickupLat,
@@ -73,6 +76,7 @@ class RideModel {
       id: id ?? this.id,
       riderId: riderId ?? this.riderId,
       riderName: riderName ?? this.riderName,
+      riderPhone: riderPhone ?? this.riderPhone,
       pickupAddress: pickupAddress ?? this.pickupAddress,
       destinationAddress: destinationAddress ?? this.destinationAddress,
       pickupLat: pickupLat ?? this.pickupLat,
@@ -95,6 +99,7 @@ class RideModel {
       id: doc.id,
       riderId: data['riderId'] as String?,
       riderName: data['riderName'] as String?,
+      riderPhone: data['riderPhone'] as String?,
       pickupAddress: data['pickupAddress'] as String?,
       destinationAddress: data['destinationAddress'] as String?,
       pickupLat: (data['pickupLat'] as num?)?.toDouble(),
@@ -113,23 +118,105 @@ class RideModel {
   /// إنشاء من JSON القادم من الباك إند (REST API).
   factory RideModel.fromJson(Map<String, dynamic> json) {
     return RideModel(
+      // ═══════════════════════════════════════════════════
+      // ملاحظة: الباك إند عبر السوكيت قد ترسل الحقول بأسماء
+      // مختلفة. نتعامل مع كل البدائل الممكنة هنا.
+      // ═══════════════════════════════════════════════════
       id: (json['id'] ?? json['_id'] ?? json['rideId']) as String? ?? '',
-      riderId: json['riderId'] as String?,
-      riderName: json['riderName'] as String?,
-      pickupAddress: json['pickupAddress'] as String?,
+      riderId:
+          (json['riderId'] ?? json['userId'] ?? json['rider'] ?? json['user'])
+              as String?,
+      riderName:
+          (json['riderName'] ??
+                  json['userName'] ??
+                  json['rider_name'] ??
+                  json['user_name'] ??
+                  json['name'])
+              as String?,
+      riderPhone:
+          (json['riderPhone'] ??
+                  json['userPhone'] ??
+                  json['phone'] ??
+                  json['phoneNumber'])
+              as String?,
+      pickupAddress:
+          (json['pickupAddress'] ??
+                  json['pickup'] ??
+                  json['origin'] ??
+                  json['originAddress'] ??
+                  json['from'])
+              as String?,
       destinationAddress:
-          json['destinationAddress'] as String? ??
-          json['dropoffAddress'] as String?,
-      pickupLat: (json['pickupLat'] as num?)?.toDouble(),
-      pickupLng: (json['pickupLng'] as num?)?.toDouble(),
-      destinationLat: (json['destinationLat'] as num?)?.toDouble(),
-      destinationLng: (json['destinationLng'] as num?)?.toDouble(),
-      fare: (json['fare'] as num?)?.toDouble(),
-      vehicleType: json['vehicleType'] as String?,
+          (json['destinationAddress'] ??
+                  json['destination'] ??
+                  json['dest'] ??
+                  json['dropoffAddress'] ??
+                  json['dropoff'] ??
+                  json['to'])
+              as String?,
+      pickupLat:
+          ((json['pickupLat'] ??
+                      json['originLat'] ??
+                      json['pickup_lat'] ??
+                      json['origin_lat'] ??
+                      json['fromLat'])
+                  as num?)
+              ?.toDouble(),
+      pickupLng:
+          ((json['pickupLng'] ??
+                      json['originLng'] ??
+                      json['pickup_lng'] ??
+                      json['origin_lng'] ??
+                      json['fromLng'])
+                  as num?)
+              ?.toDouble(),
+      destinationLat:
+          ((json['destinationLat'] ??
+                      json['destLat'] ??
+                      json['destination_lat'] ??
+                      json['dest_lat'] ??
+                      json['toLat'])
+                  as num?)
+              ?.toDouble(),
+      destinationLng:
+          ((json['destinationLng'] ??
+                      json['destLng'] ??
+                      json['destination_lng'] ??
+                      json['dest_lng'] ??
+                      json['toLng'])
+                  as num?)
+              ?.toDouble(),
+      fare:
+          ((json['fare'] ??
+                      json['price'] ??
+                      json['amount'] ??
+                      json['estimatedFare'])
+                  as num?)
+              ?.toDouble(),
+      vehicleType:
+          (json['vehicleType'] ??
+                  json['rideType'] ??
+                  json['vehicle_type'] ??
+                  json['ride_type'])
+              as String?,
       status: _statusFromString(json['status'] as String?),
-      distance: json['distance'] as String?,
-      etaText: json['etaText'] as String?,
-      createdAt: _dateFromJson(json['createdAt']),
+      distance:
+          (json['distance'] ?? json['distanceText'] ?? json['distance_text'])
+              as String?,
+      etaText:
+          (json['etaText'] ??
+                  json['eta'] ??
+                  json['duration'] ??
+                  json['durationText'] ??
+                  json['duration_text'])
+              as String?,
+      createdAt: _dateFromJson(
+        json['createdAt'] ??
+            json['_timestamp'] ??
+            json['timestamp'] ??
+            json['created_at'] ??
+            json['time'],
+      ),
     );
   }
 

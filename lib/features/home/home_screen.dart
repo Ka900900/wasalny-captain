@@ -21,6 +21,7 @@ import 'package:waslny_captain/features/wallet/wallet_screen.dart';
 import 'package:waslny_captain/features/profile/profile_screen.dart';
 import 'package:waslny_captain/features/notifications/notifications_screen.dart';
 import 'package:waslny_captain/features/chat/chat_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'widgets/home_map_widget.dart';
 import 'widgets/ride_request_card.dart';
@@ -489,6 +490,34 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     );
   }
 
+  /// فتح متصفح الهاتف لطلب الاتصال بالراكب.
+  void _callRider(RideModel ride) {
+    final phone = ride.riderPhone;
+    if (phone == null || phone.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('رقم هاتف الراكب غير متوفر'),
+            backgroundColor: Color.fromARGB(255, 250, 62, 66),
+          ),
+        );
+      }
+      return;
+    }
+    final uri = Uri.parse('tel:$phone');
+    launchUrl(uri).catchError((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر فتح طلب الاتصال'),
+            backgroundColor: Color.fromARGB(255, 250, 62, 66),
+          ),
+        );
+      }
+      return true; // منع انتشار الخطأ
+    });
+  }
+
   Future<void> _uploadCurrentPosition() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -861,10 +890,13 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                 destinationAddress: _currentRideRequest!.destinationAddress,
                 price: _currentRideRequest!.fare?.toStringAsFixed(2),
                 riderName: _currentRideRequest!.riderName,
+                riderPhone: _currentRideRequest!.riderPhone,
                 distance: _currentRideRequest!.distance,
                 onAccept: () => _acceptRide(_currentRideRequest!),
                 onReject: _rejectRide,
                 onExpired: _rejectRide,
+                onChatTap: () => _openChat(_currentRideRequest!),
+                onCallTap: () => _callRider(_currentRideRequest!),
               ),
             )
           else if (_currentRideRequest!.status == RideStatus.accepted ||
