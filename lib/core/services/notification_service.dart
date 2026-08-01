@@ -102,6 +102,11 @@ class NotificationService {
   void Function(AppNotification notification)? onNotificationTap;
   void Function(AppNotification notification)? onForegroundNotification;
 
+  /// يُستدعى عند وصول رسالة FCM من نوع `new_ride` والتطبيق مفتوح في المقدّمة
+  /// (Foreground). تُستخدم كـ Fallback لعرض كارت الرحلة (RideRequestCard) عبر
+  /// HomeScreen إذا كان الكابتن Online. قيم البيانات كلها Strings (قيود FCM).
+  void Function(Map<String, dynamic> data)? onNewRideMessage;
+
   /// Whether FCM listeners are currently active.
   bool _enabled = false;
 
@@ -326,18 +331,21 @@ class NotificationService {
 
   void _onForegroundMessage(RemoteMessage message) {
     final notification = _parseRemoteMessage(message);
-    if (notification != null) {
-      // Show a local notification (so it appears in the system tray even while
-      // the app is open) and play the distinctive alert sound.
-      _showLocalNotificationFromMessage(message);
-      if (notification.type == NotificationType.newRide) {
-        SoundService.instance.playLoopingAlert();
-      } else {
-        SoundService.instance.playNotificationAlert();
-      }
-      _saveNotification(notification);
-      onForegroundNotification?.call(notification);
+    if (notification == null) return;
+
+    // عرض إشعار محلي في صينية النظام حتى لو كان التطبيق مفتوحاً.
+    _showLocalNotificationFromMessage(message);
+
+    if (notification.type == NotificationType.newRide) {
+      // Fallback من FCM: ندع HomeScreen يقرر عرض كارت الرحلة فقط لو الكابتن
+      // Online (ويشغّل هو صوت التنبيه المتكرر). لو Offline → لا كارت قبول.
+      onNewRideMessage?.call(message.data);
+      return;
     }
+
+    SoundService.instance.playNotificationAlert();
+    _saveNotification(notification);
+    onForegroundNotification?.call(notification);
   }
 
   AppNotification? _parseRemoteMessage(RemoteMessage message) {

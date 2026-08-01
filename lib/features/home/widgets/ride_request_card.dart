@@ -269,7 +269,9 @@ class _RideRequestCardState extends State<RideRequestCard> {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    widget.riderName ?? '',
+                    (widget.riderName == null || widget.riderName!.isEmpty)
+                        ? 'عميل'
+                        : widget.riderName!,
                     style: AppTextStyles.bodyMedium?.copyWith(
                       color: AppColors.textSecondary,
                     ),

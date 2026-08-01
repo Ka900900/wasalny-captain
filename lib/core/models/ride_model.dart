@@ -102,14 +102,16 @@ class RideModel {
       riderPhone: data['riderPhone'] as String?,
       pickupAddress: data['pickupAddress'] as String?,
       destinationAddress: data['destinationAddress'] as String?,
-      pickupLat: (data['pickupLat'] as num?)?.toDouble(),
-      pickupLng: (data['pickupLng'] as num?)?.toDouble(),
-      destinationLat: (data['destinationLat'] as num?)?.toDouble(),
-      destinationLng: (data['destinationLng'] as num?)?.toDouble(),
-      fare: (data['fare'] as num?)?.toDouble(),
+      pickupLat: _toDouble(data['pickupLat'] ?? data['originLat']),
+      pickupLng: _toDouble(data['pickupLng'] ?? data['originLng']),
+      destinationLat: _toDouble(data['destinationLat'] ?? data['destLat']),
+      destinationLng: _toDouble(data['destinationLng'] ?? data['destLng']),
+      fare: _toDouble(data['fare'] ?? data['price']),
       vehicleType: data['vehicleType'] as String?,
       status: _statusFromString(data['status'] as String?),
-      distance: data['distance'] as String?,
+      distance: _distanceToString(
+        data['distance'] ?? data['distanceKm'] ?? data['distanceText'],
+      ),
       etaText: data['etaText'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
@@ -154,45 +156,41 @@ class RideModel {
                   json['dropoff'] ??
                   json['to'])
               as String?,
-      pickupLat:
-          ((json['pickupLat'] ??
-                      json['originLat'] ??
-                      json['pickup_lat'] ??
-                      json['origin_lat'] ??
-                      json['fromLat'])
-                  as num?)
-              ?.toDouble(),
-      pickupLng:
-          ((json['pickupLng'] ??
-                      json['originLng'] ??
-                      json['pickup_lng'] ??
-                      json['origin_lng'] ??
-                      json['fromLng'])
-                  as num?)
-              ?.toDouble(),
-      destinationLat:
-          ((json['destinationLat'] ??
-                      json['destLat'] ??
-                      json['destination_lat'] ??
-                      json['dest_lat'] ??
-                      json['toLat'])
-                  as num?)
-              ?.toDouble(),
-      destinationLng:
-          ((json['destinationLng'] ??
-                      json['destLng'] ??
-                      json['destination_lng'] ??
-                      json['dest_lng'] ??
-                      json['toLng'])
-                  as num?)
-              ?.toDouble(),
-      fare:
-          ((json['fare'] ??
-                      json['price'] ??
-                      json['amount'] ??
-                      json['estimatedFare'])
-                  as num?)
-              ?.toDouble(),
+      pickupLat: _toDouble(
+        json['pickupLat'] ??
+            json['originLat'] ??
+            json['pickup_lat'] ??
+            json['origin_lat'] ??
+            json['fromLat'],
+      ),
+      pickupLng: _toDouble(
+        json['pickupLng'] ??
+            json['originLng'] ??
+            json['pickup_lng'] ??
+            json['origin_lng'] ??
+            json['fromLng'],
+      ),
+      destinationLat: _toDouble(
+        json['destinationLat'] ??
+            json['destLat'] ??
+            json['destination_lat'] ??
+            json['dest_lat'] ??
+            json['toLat'],
+      ),
+      destinationLng: _toDouble(
+        json['destinationLng'] ??
+            json['destLng'] ??
+            json['destination_lng'] ??
+            json['dest_lng'] ??
+            json['toLng'],
+      ),
+      fare: _toDouble(
+        json['fare'] ??
+            json['price'] ??
+            json['amount'] ??
+            json['estimatedFare'] ??
+            json['estimated_price'],
+      ),
       vehicleType:
           (json['vehicleType'] ??
                   json['rideType'] ??
@@ -200,9 +198,13 @@ class RideModel {
                   json['ride_type'])
               as String?,
       status: _statusFromString(json['status'] as String?),
-      distance:
-          (json['distance'] ?? json['distanceText'] ?? json['distance_text'])
-              as String?,
+      distance: _distanceToString(
+        json['distance'] ??
+            json['distanceKm'] ??
+            json['distanceText'] ??
+            json['distance_text'] ??
+            json['distance_km'],
+      ),
       etaText:
           (json['etaText'] ??
                   json['eta'] ??
@@ -218,6 +220,34 @@ class RideModel {
             json['time'],
       ),
     );
+  }
+
+  /// تحويل قيمة إلى double بأمان (تقبل num أو String رقمية مثل "50.00").
+  static double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return double.tryParse(trimmed);
+    }
+    return null;
+  }
+
+  /// تحويل المسافة إلى نص آمن (تقبل num أو String).
+  /// - لو num مثل 3.2 → "3.2 كم"
+  /// - لو String "3.2" → "3.2 كم"
+  /// - لو String "3.2 كم" → تُترك كما هي
+  static String? _distanceToString(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return '${value.toStringAsFixed(1)} كم';
+    if (value is String) {
+      final v = value.trim();
+      if (v.isEmpty) return null;
+      final hasUnit = v.contains('كم') || v.contains('km');
+      return hasUnit ? v : '$v كم';
+    }
+    return value.toString();
   }
 
   /// تحليل تاريخ من عدة صيغ محتملة (ISO string أو timestamp بـ seconds/ms).

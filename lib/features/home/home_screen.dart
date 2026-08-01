@@ -14,6 +14,7 @@ import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/sound_service.dart';
 import 'package:waslny_captain/core/services/realtime_service.dart';
 import 'package:waslny_captain/core/services/socket_service.dart';
+import 'package:waslny_captain/core/services/notification_service.dart';
 import 'package:waslny_captain/features/profile/edit_profile_screen.dart';
 import 'package:waslny_captain/core/widgets/route_transitions.dart';
 import 'package:waslny_captain/features/trips/trips_screen.dart';
@@ -98,11 +99,34 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     // حدث لحظي من الباك إند للكابتن المخصّص فقط → اعرض الكارت + شغّل صوت التنبيه.
     SocketService().onNewAvailableRide = (ride) {
       if (!mounted) return;
+      // لو الكابتن Offline → تجاهل الطلب تماماً (لا كارت قبول).
+      if (!_isOnline) {
+        debugPrint('IGNORE_RIDE_OFFLINE (socket): ride=${ride.id}');
+        return;
+      }
       setState(() => _currentRideRequest = ride);
       // شغّل صوت التنبيه المتكرر لجذب انتباه الكابتن.
       SoundService.instance.playLoopingAlert();
       // لا نبدأ تتبّع حالة الرحلة هنا — ننتظر نجاح القبول (status → accepted)
       // لربط مستندها الخاص في Firestore عبر startRideStatusListenerById.
+    };
+
+    // ── Fallback من FCM عند وصول رسالة new_ride في المقدّمة (Foreground) ──
+    // لو السوكيت تأخر/فشل → نبني RideModel من بيانات الإشعار ونعرض نفس الكارت
+    // (فقط لو الكابتن Online). لو Offline → لا كارت قبول.
+    NotificationService.instance.onNewRideMessage = (data) {
+      if (!mounted) return;
+      if (!_isOnline) {
+        debugPrint('IGNORE_RIDE_OFFLINE (FCM fallback)');
+        return;
+      }
+      final ride = _rideFromFcmData(data);
+      if (ride == null || ride.id.isEmpty) {
+        debugPrint('FCM new_ride: missing rideId — no card shown');
+        return;
+      }
+      setState(() => _currentRideRequest = ride);
+      SoundService.instance.playLoopingAlert();
     };
 
     // أي تغيير في حالة الرحلة (من Firestore) → حدّث الكارت فوراً
@@ -153,6 +177,8 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     RealtimeService.instance.stopRideListener();
     RealtimeService.instance.stopRideStatusListener();
     SocketService().disconnect();
+    // إلغاء تسجيل الـ callback الخاص بـ Fallback الإشعارات لمنع التسريبات.
+    NotificationService.instance.onNewRideMessage = null;
     super.dispose();
   }
 
@@ -386,6 +412,26 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     // لا نوقف مستمع الحالة لأنه لا يُستدعى إلا بعد القبول الفعلي.
     _activeTripId = null;
     setState(() => _currentRideRequest = null);
+  }
+
+  /// بناء [RideModel] من بيانات FCM لرسالة `new_ride` (كل قيم data Strings).
+  /// تُستخدم كـ Fallback عند تأخر/فشل السوكيت. لو فشل التحليل لأي سبب، نبني
+  /// كارتاً بالـ rideId والعناوين المتوفرة فقط حتى لا يختفي الطلب.
+  RideModel? _rideFromFcmData(Map<String, dynamic> data) {
+    try {
+      return RideModel.fromJson(data);
+    } catch (e) {
+      debugPrint('FCM ride parse error: $e');
+      return RideModel(
+        id: data['rideId'] ?? data['id'] ?? '',
+        riderName: data['riderName'] as String?,
+        riderPhone: data['riderPhone'] as String?,
+        pickupAddress: data['pickupAddress'] as String?,
+        destinationAddress: data['destinationAddress'] as String?,
+        fare: double.tryParse(data['price']?.toString() ?? ''),
+        distance: data['distance'] as String?,
+      );
+    }
   }
 
   /// وصول الكابتن لنقطة الالتقاط — مُشغّل فقط (Trigger).
