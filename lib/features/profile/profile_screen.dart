@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:waslny_captain/widgets/image_source_picker.dart';
 
+import 'package:waslny_captain/core/constants/app_constants.dart';
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
@@ -151,6 +153,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       }
     }
+  }
+
+  // ──────────────────────────────────────────────
+  // Share app
+  // ──────────────────────────────────────────────
+
+  /// يشارك رابط تطبيق الكابتن عبر نافذة المشاركة الخاصة بالجهاز.
+  Future<void> _shareApp() async {
+    const message =
+        'انضم لكبتن وصلني 🚗\nاشتغل بمرونة واستقبل طلبات الركاب\nحمّل تطبيق الكابتن من هنا:\n${AppConstants.appShareUrl}';
+    await Share.share(message, subject: 'وصلني');
   }
 
   // ──────────────────────────────────────────────
@@ -500,6 +513,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 builder: (_) => const SettingsScreen(),
                               ),
                             );
+                          },
+                        ),
+                        _ProfileMenuItem(
+                          icon: Icons.share_rounded,
+                          iconColor: AppColors.info,
+                          title: 'شارك التطبيق',
+                          subtitle: 'ادعُ أصدقاءك للانضمام إلى كبتن وصلني',
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            _shareApp();
                           },
                         ),
                         const SizedBox(height: AppSpacing.lg),
