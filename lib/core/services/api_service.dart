@@ -446,9 +446,16 @@ class ApiService {
   }) async {
     if (!backendEnabled) return <String, dynamic>{};
     await _ensureTokenLoaded();
+    // ── توحيد قيم طريقة الدفع مع الباك إند ──────────────────────────────
+    // الواجهة تستخدم 'wallet' (محفظة) بينما الباك إند يقبل المحفظة الإلكترونية
+    // باسم 'vodafone_cash' في الـ topUpSchema والخدمة. نحوّل القيمة هنا حتى
+    // لا يرفض الباك إند الطلب بـ 400 «بيانات غير صحيحة».
+    final backendMethod = paymentMethod == 'wallet'
+        ? 'vodafone_cash'
+        : paymentMethod;
     final data = <String, dynamic>{
       'amount': amount,
-      'paymentMethod': paymentMethod,
+      'paymentMethod': backendMethod,
     };
     if (walletPhone != null) {
       data['walletPhone'] = walletPhone;
