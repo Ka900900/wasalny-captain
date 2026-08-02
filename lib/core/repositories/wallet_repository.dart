@@ -23,12 +23,7 @@ class WalletRepository {
   /// Throws [ApiException] on failure.
   Future<WalletData> fetchWallet(String uid) async {
     final result = await _api.getWalletBalance();
-    return WalletData(
-      balance: (result['balance'] as num?)?.toDouble() ?? 0,
-      pendingWithdraw: (result['pendingWithdraw'] as num?)?.toDouble() ?? 0,
-      totalEarned: (result['totalEarned'] as num?)?.toDouble() ?? 0,
-      totalWithdrawn: (result['totalWithdrawn'] as num?)?.toDouble() ?? 0,
-    );
+    return WalletData.fromMap(result);
   }
 
   /// Convenience alias for a one-shot wallet fetch.

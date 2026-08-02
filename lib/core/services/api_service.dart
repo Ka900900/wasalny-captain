@@ -438,6 +438,7 @@ class ApiService {
   ///
   /// Creates a new payment session on the backend and returns the `sessionId`
   /// and `paymentUrl` for use in the in-app WebView checkout.
+  /// يرمي [ApiException] برسالة واضحة إذا رفض الباك إند المبلغ (حد أدنى/أقصى).
   Future<Map<String, dynamic>> initiatePayment({
     required double amount,
     String paymentMethod = 'card',
@@ -452,8 +453,16 @@ class ApiService {
     if (walletPhone != null) {
       data['walletPhone'] = walletPhone;
     }
-    final response = await _dio.post('/wallet/top-up', data: data);
-    return response.data as Map<String, dynamic>;
+    try {
+      final response = await _dio.post('/wallet/top-up', data: data);
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final msg = _extractErrorMessage(e);
+      throw ApiException(
+        message: msg ?? 'خطأ في شحن المحفظة',
+        statusCode: e.response?.statusCode ?? -1,
+      );
+    }
   }
 
   // ── Payment Methods ──────────────────────────────────
@@ -521,21 +530,22 @@ class ApiService {
     return response.data as Map<String, dynamic>;
   }
 
-  /// قبول طلب رحلة (POST). تُرجع true عند النجاح، false عند الفشل.
-  Future<bool> acceptRide(String rideId) async {
-    if (!backendEnabled) return true;
+  /// قبول طلب رحلة (POST). تُرجع `null` عند النجاح، أو رسالة الخطأ عند الفشل.
+  /// رسالة الخطأ تُستخرج من الباك إند (مثل رفض حد الدين).
+  Future<String?> acceptRide(String rideId) async {
+    if (!backendEnabled) return null;
     try {
       await _dio.post('/driver/accept-ride/$rideId');
-      return true;
+      return null;
     } on DioException catch (e) {
       logWarning(
         'ApiService',
         'acceptRide failed: ${e.response?.statusCode} ${e.response?.data}',
       );
-      return false;
+      return _extractErrorMessage(e);
     } catch (e) {
       logError('ApiService', 'acceptRide error: $e', e);
-      return false;
+      return 'حدث خطأ أثناء قبول الرحلة';
     }
   }
 
@@ -596,9 +606,9 @@ class ApiService {
   /// تبديل حالة توافر الكابتن (Online/Offline) في الباك إند.
   /// يُرسل POST إلى /driver/toggle-availability مع {'isAvailable': isAvailable}.
   /// التوك ين يضاف تلقائياً في الـ Header عبر AuthInterceptor.
-  /// تُرجع true عند النجاح، false عند الفشل.
-  Future<bool> toggleAvailability(bool isAvailable) async {
-    if (!backendEnabled) return true;
+  /// تُرجع `null` عند النجاح، أو رسالة الخطأ عند الفشل (مثل رفض حد الدين).
+  Future<String?> toggleAvailability(bool isAvailable) async {
+    if (!backendEnabled) return null;
     await _ensureTokenLoaded();
 
     logFine('ApiService', '[toggleAvailability] → isAvailable: $isAvailable');
@@ -610,14 +620,26 @@ class ApiService {
         data: {'isAvailable': isAvailable},
       );
       logFine('ApiService', '[toggleAvailability] ✅ success');
-      return true;
+      return null;
     } on DioException catch (e) {
       logWarning('ApiService', '[toggleAvailability] DioException: $e');
-      return false;
+      return _extractErrorMessage(e);
     } catch (e) {
       logError('ApiService', 'AVAILABILITY TOGGLE ERROR: $e', e);
-      return false;
+      return 'حدث خطأ أثناء تغيير حالة التوافر';
     }
+  }
+
+  /// يستخرج رسالة الخطأ العربية من استجابة الباك إند عند فشل الطلب.
+  String? _extractErrorMessage(DioException e) {
+    final data = e.response?.data;
+    if (data is Map<String, dynamic>) {
+      final msg = data['error'] as String? ?? data['message'] as String?;
+      if (msg != null && msg.trim().isNotEmpty) return msg.trim();
+    } else if (data is String && data.trim().isNotEmpty) {
+      return data.trim();
+    }
+    return null;
   }
 
   /// Get earnings summary for the given [period] (daily | weekly | monthly).

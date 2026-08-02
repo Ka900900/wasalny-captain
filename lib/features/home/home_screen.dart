@@ -376,22 +376,15 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
-    // 2. استدعاء الباك إند (تُرجع true عند النجاح، false عند الفشل)
-    final success = await ApiService.instance.acceptRide(ride.id);
+    // 2. استدعاء الباك إند (تُرجع null عند النجاح، أو رسالة الخطأ عند الفشل)
+    final errorMsg = await ApiService.instance.acceptRide(ride.id);
 
     // 3. إخفاء مؤشر التحميل
     if (mounted) Navigator.pop(context);
 
-    if (!success && mounted) {
-      // فشل القبول (كابتن آخر التقطها، أو العميل ألغاها)
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'عفواً، لم نتمكن من قبول الطلب (ربما تم قبوله من كابتن آخر).',
-          ),
-          backgroundColor: Color.fromARGB(255, 49, 49, 48),
-        ),
-      );
+    if (errorMsg != null && mounted) {
+      // فشل القبول (كابتن آخر التقطها، أو العميل ألغاها، أو حد الدين)
+      _handleRideActionError(errorMsg);
       return;
     }
 
@@ -634,19 +627,15 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
 
     try {
       // 1. مزامنة الحالة مع الباك إند أولاً (قبل أي تغيير محلي)
-      final backendOk = await ApiService.instance.toggleAvailability(newValue);
-      debugPrint('TOGGLE_API_RESULT: $backendOk');
-      if (!backendOk) {
+      final toggleError = await ApiService.instance.toggleAvailability(
+        newValue,
+      );
+      debugPrint('TOGGLE_API_RESULT: $toggleError');
+      if (toggleError != null) {
         setState(() => _isToggling = false);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'تعذر مزامنة حالة التوافر مع السيرفر، حاول مرة أخرى',
-              ),
-              backgroundColor: AppColors.error,
-            ),
-          );
+          // رفض السيرفر (قد يكون بسبب حد الدين) → حوار/SnackBar مع زر الشحن
+          _handleRideActionError(toggleError);
         }
         return; // لا نغيّر الحالة محلياً عند الفشل
       }
@@ -781,6 +770,76 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         ],
       ),
     );
+  }
+
+  // ══════════════════════════════════════════════════════
+  // Wallet debt-limit rejection handling
+  // ══════════════════════════════════════════════════════
+
+  /// يعالج رفض السيرفر لإجراء (قبول رحلة / تفعيل الأونلاين).
+  /// إذا كان الرفض بسبب حد الدين → حوار مع زر يفتح شاشة المحفظة للشحن.
+  void _handleRideActionError(String message) {
+    if (!mounted) return;
+    final isDebtLimit =
+        message.contains('حد الدين') || message.contains('اشحن');
+    if (isDebtLimit) {
+      _showDebtLimitDialog(message);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
+  Future<void> _showDebtLimitDialog(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.wallet, color: Colors.redAccent, size: 24),
+            SizedBox(width: 8),
+            Text('تم إيقاف الرحلات', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'لاحقاً',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openWalletScreen();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.neonGreen,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('اشحن المحفظة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// يفتح تبويب المحفظة (التبويب رقم 2 في الـ IndexedStack).
+  void _openWalletScreen() {
+    if (!mounted) return;
+    setState(() => _selectedIndex = 2);
   }
 
   Widget _buildComplianceBanner() {

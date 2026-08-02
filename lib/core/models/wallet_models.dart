@@ -162,20 +162,38 @@ class WalletData {
   final double totalWithdrawn;
   final List<WalletTransaction> recentTransactions;
 
+  // ── سياسة محفظة الكابتن (تُجلب من الباك إند) ──
+  final double minBalance; // حد الدين (افتراضياً -300)
+  final double maxBalance; // أقصى رصيد (افتراضياً 1500)
+  final double minTopUp; // أقل مبلغ شحن (افتراضياً 50)
+  final bool canAcceptRides; // الرصيد > حد الدين
+  final bool canWithdraw; // الرصيد > 0
+
   const WalletData({
     this.balance = 0,
     this.pendingWithdraw = 0,
     this.totalEarned = 0,
     this.totalWithdrawn = 0,
     this.recentTransactions = const [],
+    this.minBalance = -300,
+    this.maxBalance = 1500,
+    this.minTopUp = 50,
+    this.canAcceptRides = true,
+    this.canWithdraw = false,
   });
 
   factory WalletData.fromMap(Map<String, dynamic> map) {
+    final balance = (map['balance'] as num?)?.toDouble() ?? 0;
     return WalletData(
-      balance: (map['balance'] as num?)?.toDouble() ?? 0,
+      balance: balance,
       pendingWithdraw: (map['pendingWithdraw'] as num?)?.toDouble() ?? 0,
       totalEarned: (map['totalEarned'] as num?)?.toDouble() ?? 0,
       totalWithdrawn: (map['totalWithdrawn'] as num?)?.toDouble() ?? 0,
+      minBalance: (map['minBalance'] as num?)?.toDouble() ?? -300,
+      maxBalance: (map['maxBalance'] as num?)?.toDouble() ?? 1500,
+      minTopUp: (map['minTopUp'] as num?)?.toDouble() ?? 50,
+      canAcceptRides: (map['canAcceptRides'] as bool?) ?? (balance > -300),
+      canWithdraw: (map['canWithdraw'] as bool?) ?? (balance > 0),
     );
   }
 
@@ -184,6 +202,11 @@ class WalletData {
     'pendingWithdraw': pendingWithdraw,
     'totalEarned': totalEarned,
     'totalWithdrawn': totalWithdrawn,
+    'minBalance': minBalance,
+    'maxBalance': maxBalance,
+    'minTopUp': minTopUp,
+    'canAcceptRides': canAcceptRides,
+    'canWithdraw': canWithdraw,
   };
 }
 

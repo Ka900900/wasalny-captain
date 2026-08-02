@@ -187,6 +187,11 @@ class _WalletScreenState extends State<WalletScreen> {
     final balance = data?.balance ?? 0;
     final pending = data?.pendingWithdraw ?? 0;
     final formatted = balance.toStringAsFixed(2);
+    // ── سياسة محفظة الكابتن ──
+    final minBalance = data?.minBalance ?? -300;
+    final isDebt = balance < 0; // رصيد سالب → مديونية
+    final isBlocked = balance <= minBalance; // عند حد الدين → إيقاف الرحلات
+    final balanceColor = isDebt ? Colors.redAccent : AppColors.primary;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
@@ -198,13 +203,18 @@ class _WalletScreenState extends State<WalletScreen> {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: isDebt
+              ? Colors.redAccent.withValues(alpha: 0.5)
+              : AppColors.primary.withValues(alpha: 0.3),
+        ),
         boxShadow: AppColors.shadowMd,
       ),
       child: Column(
         children: [
+          // العنوان: مديونية عند الرصيد السالب
           Text(
-            'الرصيد الحالي',
+            isDebt ? 'المديونية الحالية' : 'الرصيد الحالي',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 8),
@@ -220,9 +230,59 @@ class _WalletScreenState extends State<WalletScreen> {
               : Text(
                   '$formatted ج.م',
                   style: AppTextStyles.amountLarge?.copyWith(
-                    color: AppColors.primary,
+                    color: balanceColor,
                   ),
                 ),
+          // تسمية مديونية عند الرصيد السالب
+          if (isDebt) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+              ),
+              child: Text(
+                'رصيد مدين — اشحن المحفظة',
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+          // بانر الإيقاف عند بلوغ حد الدين (-300)
+          if (isBlocked) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                border: Border.all(
+                  color: Colors.redAccent.withValues(alpha: 0.6),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.block, color: Colors.redAccent, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'تم إيقاف الرحلات — اشحن الآن',
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (pending > 0) ...[
             const SizedBox(height: 8),
             Container(
@@ -261,6 +321,11 @@ class _WalletScreenState extends State<WalletScreen> {
   // ── Quick actions ────────────────────────────────────
 
   Widget _buildQuickActions() {
+    final data = _walletData;
+    final balance = data?.balance ?? 0;
+    // السحب متاح فقط إذا كان الرصيد > 0 (سياسة المحفظة)
+    final canWithdraw = balance > 0;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
@@ -277,6 +342,7 @@ class _WalletScreenState extends State<WalletScreen> {
             child: _buildActionButton(
               icon: Icons.credit_card,
               label: 'سحب رصيد',
+              enabled: canWithdraw,
               onTap: _showWithdrawSheet,
             ),
           ),
@@ -300,25 +366,30 @@ class _WalletScreenState extends State<WalletScreen> {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    bool enabled = true,
   }) {
+    final Color fg = enabled ? AppColors.neonGreen : AppColors.textMuted;
+    final Color labelColor = enabled ? Colors.white : AppColors.textMuted;
     return InkWell(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
           color: AppColors.surfaceDark,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.glassBorder),
+          border: Border.all(
+            color: enabled ? AppColors.glassBorder : Colors.white12,
+          ),
         ),
         child: Column(
           children: [
-            Icon(icon, color: AppColors.neonGreen, size: 26),
+            Icon(icon, color: fg, size: 26),
             const SizedBox(height: 6),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: labelColor,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1287,6 +1358,10 @@ class _WalletScreenState extends State<WalletScreen> {
     bool isLoading = false;
     // طريقة الدفع المختارة: 'card' (بطاقة بنكية) أو 'wallet' (محفظة)
     String selectedMethod = 'card';
+    // ── سياسة محفظة الكابتن (تحقق محلي: min 50 / max 1500) ──
+    final minTopUp = _walletData?.minTopUp ?? 50;
+    final maxBalance = _walletData?.maxBalance ?? 1500;
+    final currentBalance = _walletData?.balance ?? 0;
 
     showModalBottomSheet(
       context: context,
@@ -1356,8 +1431,11 @@ class _WalletScreenState extends State<WalletScreen> {
                         if (amount == null || amount <= 0) {
                           return 'مبلغ غير صالح';
                         }
-                        if (amount > 10000) {
-                          return 'الحد الأقصى 10,000 ج.م';
+                        if (amount < minTopUp) {
+                          return 'أقل مبلغ للشحن هو ${minTopUp.toStringAsFixed(0)} ج.م';
+                        }
+                        if (currentBalance + amount > maxBalance) {
+                          return 'لا يمكن أن يتجاوز رصيد المحفظة ${maxBalance.toStringAsFixed(0)} ج.م';
                         }
                         return null;
                       },
@@ -1514,6 +1592,18 @@ class _WalletScreenState extends State<WalletScreen> {
                                       ),
                                     );
                                   }
+                                } on ApiException catch (e) {
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(
+                                      this.context,
+                                    ).showSnackBar(
+                                      SnackBar(
+                                        content: Text(e.message),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
                                 } catch (e) {
                                   if (ctx.mounted) Navigator.pop(ctx);
                                   if (mounted) {
@@ -1521,7 +1611,7 @@ class _WalletScreenState extends State<WalletScreen> {
                                       this.context,
                                     ).showSnackBar(
                                       SnackBar(
-                                        content: Text('خطأ: ${e.toString()}'),
+                                        content: Text('خطأ: $e'),
                                         backgroundColor: Colors.redAccent,
                                       ),
                                     );
