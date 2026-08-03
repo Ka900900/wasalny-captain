@@ -12,7 +12,7 @@ enum EarningsTab { daily, weekly, monthly }
 /// Full earnings screen with period switching, bar chart and trip statistics.
 ///
 /// Data is fetched live from the Waslny Backend API via [EarningsRepository]
-/// (`GET /api/v1/driver/earnings?period=...`). There is no fallback to fake
+/// (`GET /api/v1/captain/earnings?period=...`). There is no fallback to fake
 /// or sample data — if the request fails (expired token, server error, or no
 /// connectivity) a clear Arabic error message with a retry button is shown to
 /// the captain instead of silently hiding the problem.

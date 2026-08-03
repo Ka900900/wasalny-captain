@@ -1540,32 +1540,54 @@ class _WalletScreenState extends State<WalletScreen> {
                                             : null,
                                       );
 
-                                  if (!response.containsKey('sessionId') ||
-                                      !response.containsKey('paymentUrl')) {
-                                    throw Exception(
-                                      'فشل في الحصول على معلومات الدفع',
-                                    );
+                                  // ── استخراج رابط الدفع بأمان (بدون as String صارم) ──
+                                  final paymentUrl =
+                                      (response['paymentUrl'] ??
+                                              response['sessionUrl'] ??
+                                              response['checkoutUrl'])
+                                          ?.toString();
+                                  final sessionId =
+                                      response['sessionId']?.toString() ?? '';
+
+                                  // لا نفتح WebView إلا برابط http(s) صالح
+                                  final trimmedUrl = paymentUrl?.trim() ?? '';
+                                  final isHttpUrl =
+                                      trimmedUrl.startsWith('http://') ||
+                                      trimmedUrl.startsWith('https://');
+                                  if (trimmedUrl.isEmpty || !isHttpUrl) {
+                                    if (ctx.mounted) Navigator.pop(ctx);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        this.context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'فشل الحصول على رابط الدفع، حاول مرة أخرى',
+                                          ),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                    return;
                                   }
 
-                                  final sessionId =
-                                      response['sessionId'] as String;
-                                  final paymentUrl =
-                                      response['paymentUrl'] as String;
-
                                   if (ctx.mounted) Navigator.pop(ctx);
+
+                                  // تأكد أن شاشة المحفظة ما زالت موجودة قبل فتح الـ WebView.
+                                  if (!mounted) return;
 
                                   // Step 2: Launch WebView with payment session
                                   final success = await Navigator.push<bool>(
                                     this.context,
                                     MaterialPageRoute(
                                       builder: (_) => KashierCheckoutWebView(
-                                        checkoutUrl: paymentUrl,
+                                        checkoutUrl: trimmedUrl,
                                         sessionId: sessionId,
                                       ),
                                     ),
                                   );
 
-                                  if (!context.mounted) return;
+                                  if (!mounted) return;
 
                                   // Step 3: Refresh wallet data
                                   _loadTransactions(uid);
@@ -1610,8 +1632,10 @@ class _WalletScreenState extends State<WalletScreen> {
                                     ScaffoldMessenger.of(
                                       this.context,
                                     ).showSnackBar(
-                                      SnackBar(
-                                        content: Text('خطأ: $e'),
+                                      const SnackBar(
+                                        content: Text(
+                                          'تعذر شحن المحفظة، حاول مرة أخرى',
+                                        ),
                                         backgroundColor: Colors.redAccent,
                                       ),
                                     );

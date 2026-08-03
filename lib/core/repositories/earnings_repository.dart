@@ -4,7 +4,7 @@ import 'package:waslny_captain/core/services/api_service.dart';
 
 /// Repository that fetches earnings data from the Waslny Backend API.
 ///
-/// Backend endpoint: `GET /api/v1/driver/earnings?period=daily|weekly|monthly`
+/// Backend endpoint: `GET /api/v1/captain/earnings?period=daily|weekly|monthly`
 ///
 /// There is **no fallback to sample/fake data**. If the API returns an error
 /// (expired token, server error, or no connectivity) a clear [EarningsException]

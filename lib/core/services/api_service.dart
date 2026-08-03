@@ -462,7 +462,12 @@ class ApiService {
     }
     try {
       final response = await _dio.post('/wallet/top-up', data: data);
-      return response.data as Map<String, dynamic>;
+      // نرجع الرد كما هو بدون فرض أنواع صارمة — الباك إند قد يرسل مفاتيح
+      // إضافية (paymentUrl/sessionUrl/sessionId) أو أنواع مختلفة حسب حالة الدفع.
+      final result = response.data;
+      if (result is Map<String, dynamic>) return result;
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return <String, dynamic>{};
     } on DioException catch (e) {
       final msg = _extractErrorMessage(e);
       throw ApiException(
@@ -650,10 +655,13 @@ class ApiService {
   }
 
   /// Get earnings summary for the given [period] (daily | weekly | monthly).
+  ///
+  /// Calls `GET /api/v1/captain/earnings?period=...` (مسار الأرباح الرسمي؛
+  /// aliases `/driver/earnings` و `/captains/earnings` تعمل أيضاً من الباك إند).
   Future<Map<String, dynamic>> getEarnings({required String period}) async {
     if (!backendEnabled) return <String, dynamic>{};
     final response = await _dio.get(
-      '/driver/earnings',
+      '/captain/earnings',
       queryParameters: {'period': period},
     );
     return response.data as Map<String, dynamic>;
