@@ -1589,30 +1589,75 @@ class _WalletScreenState extends State<WalletScreen> {
 
                                   if (!mounted) return;
 
-                                  // Step 3: Refresh wallet data
-                                  _loadTransactions(uid);
-                                  _loadAll();
-
                                   if (success == true) {
                                     ScaffoldMessenger.of(
                                       this.context,
                                     ).showSnackBar(
                                       const SnackBar(
-                                        content: Text('تم شحن المحفظة بنجاح!'),
-                                        backgroundColor: Color(0xFF22C55E),
+                                        content: Text('جاري تأكيد الدفع…'),
+                                        backgroundColor: Color(0xFFF59E0B),
                                       ),
                                     );
+                                  }
+
+                                  // Step 3: Always refresh wallet data after the checkout closes
+                                  await Future.wait([
+                                    _loadTransactions(uid),
+                                    _loadAll(),
+                                  ]);
+
+                                  if (success == true) {
+                                    try {
+                                      await ApiService.instance.confirmTopUp(
+                                        orderId:
+                                            response['orderId']?.toString() ??
+                                            '',
+                                        sessionId: sessionId,
+                                      );
+                                      await Future.wait([
+                                        _loadTransactions(uid),
+                                        _loadAll(),
+                                      ]);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          this.context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'تم شحن المحفظة بنجاح!',
+                                            ),
+                                            backgroundColor: Color(0xFF22C55E),
+                                          ),
+                                        );
+                                      }
+                                    } catch (_) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(
+                                          this.context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'تم إغلاق الدفع، سيتم تحديث الرصيد عند التأكيد',
+                                            ),
+                                            backgroundColor:
+                                                Colors.orangeAccent,
+                                          ),
+                                        );
+                                      }
+                                    }
                                   } else {
-                                    ScaffoldMessenger.of(
-                                      this.context,
-                                    ).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'فشلت عملية الدفع، يرجى المحاولة مرة أخرى',
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        this.context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'فشلت عملية الدفع، يرجى المحاولة مرة أخرى',
+                                          ),
+                                          backgroundColor: Colors.redAccent,
                                         ),
-                                        backgroundColor: Colors.redAccent,
-                                      ),
-                                    );
+                                      );
+                                    }
                                   }
                                 } on ApiException catch (e) {
                                   if (ctx.mounted) Navigator.pop(ctx);

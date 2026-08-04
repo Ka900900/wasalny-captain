@@ -477,6 +477,34 @@ class ApiService {
     }
   }
 
+  /// Confirm that a Kashier top-up payment was completed and credit the wallet.
+  Future<Map<String, dynamic>> confirmTopUp({
+    required String orderId,
+    String? sessionId,
+  }) async {
+    if (!backendEnabled) return <String, dynamic>{};
+    await _ensureTokenLoaded();
+    try {
+      final response = await _dio.post(
+        '/wallet/topup/confirm',
+        data: {
+          'orderId': orderId,
+          if (sessionId != null && sessionId.isNotEmpty) 'sessionId': sessionId,
+        },
+      );
+      final result = response.data;
+      if (result is Map<String, dynamic>) return result;
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return <String, dynamic>{};
+    } on DioException catch (e) {
+      final msg = _extractErrorMessage(e);
+      throw ApiException(
+        message: msg ?? 'تعذر تأكيد الدفع',
+        statusCode: e.response?.statusCode ?? -1,
+      );
+    }
+  }
+
   // ── Payment Methods ──────────────────────────────────
 
   /// Get all saved payment methods for the current user.
