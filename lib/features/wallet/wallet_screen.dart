@@ -1358,8 +1358,8 @@ class _WalletScreenState extends State<WalletScreen> {
     bool isLoading = false;
     // طريقة الدفع المختارة: 'card' (بطاقة بنكية) أو 'wallet' (محفظة)
     String selectedMethod = 'card';
-    // ── سياسة محفظة الكابتن (تحقق محلي: min 50 / max 1500) ──
-    final minTopUp = _walletData?.minTopUp ?? 50;
+    // ── سياسة محفظة الكابتن (تحقق محلي: يعتمد على minTopUp من الباك إند مع fallback 10) ──
+    final minTopUp = _walletData?.minTopUp ?? 10;
     final maxBalance = _walletData?.maxBalance ?? 1500;
     final currentBalance = _walletData?.balance ?? 0;
 

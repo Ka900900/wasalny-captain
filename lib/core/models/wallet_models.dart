@@ -165,7 +165,7 @@ class WalletData {
   // ── سياسة محفظة الكابتن (تُجلب من الباك إند) ──
   final double minBalance; // حد الدين (افتراضياً -300)
   final double maxBalance; // أقصى رصيد (افتراضياً 1500)
-  final double minTopUp; // أقل مبلغ شحن (افتراضياً 50)
+  final double minTopUp; // أقل مبلغ شحن (افتراضياً 10)
   final bool canAcceptRides; // الرصيد > حد الدين
   final bool canWithdraw; // الرصيد > 0
 
@@ -177,7 +177,7 @@ class WalletData {
     this.recentTransactions = const [],
     this.minBalance = -300,
     this.maxBalance = 1500,
-    this.minTopUp = 50,
+    this.minTopUp = 10,
     this.canAcceptRides = true,
     this.canWithdraw = false,
   });
@@ -191,7 +191,7 @@ class WalletData {
       totalWithdrawn: (map['totalWithdrawn'] as num?)?.toDouble() ?? 0,
       minBalance: (map['minBalance'] as num?)?.toDouble() ?? -300,
       maxBalance: (map['maxBalance'] as num?)?.toDouble() ?? 1500,
-      minTopUp: (map['minTopUp'] as num?)?.toDouble() ?? 50,
+      minTopUp: (map['minTopUp'] as num?)?.toDouble() ?? 10,
       canAcceptRides: (map['canAcceptRides'] as bool?) ?? (balance > -300),
       canWithdraw: (map['canWithdraw'] as bool?) ?? (balance > 0),
     );
