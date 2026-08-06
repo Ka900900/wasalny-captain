@@ -14,6 +14,15 @@ class SocketService {
   /// (بديل آمن عن مستمع Firestore العام للرحلات المعلّقة).
   void Function(RideModel ride)? onNewAvailableRide;
 
+  /// يُستدعى عند تغيّر حالة رحلة نشطة (ACCEPTED/ARRIVED/STARTED/COMPLETED/
+  /// CANCELLED) عبر حدث `ride.status_update` — بديل موثوق (غير مرتبط
+  /// بمشروع Firestore) لمستمع حالة الرحلة، خاصة للكابتن صاحب الرحلة.
+  void Function(String rideId, String status, Map<String, dynamic> data)?
+  onRideStatusUpdate;
+
+  /// يُستدعى عند إلغاء الرحلة من العميل عبر حدث `ride.cancelled`.
+  void Function(String rideId, String? reason)? onRideCancelled;
+
   // تهيئة الاتصال بالسيرفر
   void initSocket(String userId, String token) {
     if (socket != null && socket!.connected) return;
@@ -73,6 +82,36 @@ class SocketService {
         }
       }
     });
+
+    // تحديثات حالة الرحلة النشطة (من الباك إند عبر `emitRideStatus`).
+    // الباك إند يبثّها لغرفة `ride:{rideId}` — على الكابتن الانضمام لها عبر
+    // `joinRide` بعد قبول الرحلة ليستقبلها (إلغاء العميل / أي تغيير حالة).
+    socket!.on('ride.status_update', (data) {
+      if (data is! Map) return;
+      try {
+        final map = Map<String, dynamic>.from(data);
+        final rideId = map['rideId']?.toString() ?? '';
+        final status = map['status']?.toString() ?? '';
+        if (rideId.isEmpty || status.isEmpty) return;
+        onRideStatusUpdate?.call(rideId, status, map);
+      } catch (e) {
+        log('⚠️ خطأ في تحليل حالة الرحلة من السوكيت: $e');
+      }
+    });
+
+    // إلغاء الرحلة (من العميل عبر socket `ride.cancel` أو REST).
+    socket!.on('ride.cancelled', (data) {
+      if (data is! Map) return;
+      try {
+        final map = Map<String, dynamic>.from(data);
+        final rideId = map['rideId']?.toString() ?? '';
+        final reason = map['reason']?.toString();
+        if (rideId.isEmpty) return;
+        onRideCancelled?.call(rideId, reason);
+      } catch (e) {
+        log('⚠️ خطأ في تحليل إلغاء الرحلة من السوكيت: $e');
+      }
+    });
   }
 
   // إرسال الموقع الحالي لايف للسيرفر
@@ -88,6 +127,23 @@ class SocketService {
 
     socket!.emit('update-location', {'lat': lat, 'lng': lng, 'rideId': rideId});
     log('📤 تم إرسال الموقع عبر السوكيت: $lat, $lng');
+  }
+
+  /// الانضمام لغرفة الرحلة `ride:{rideId}` بعد قبولها ليستقبل الكابتن
+  /// أحداث حالة الرحلة (الإلغاء من العميل، تغيير الحالة، موقع الراكب...).
+  void joinRide(String rideId) {
+    if (socket == null || !socket!.connected) {
+      log('⚠️ السوكيت غير متصل. لا يمكن الانضمام لغرفة الرحلة.');
+      return;
+    }
+    socket!.emit('tracking:start', {'rideId': rideId});
+    log('🚪 تم الانضمام لغرفة الرحلة: $rideId');
+  }
+
+  /// مغادرة غرفة الرحلة عند انتهائها أو إلغائها.
+  void leaveRide(String rideId) {
+    if (socket == null || !socket!.connected) return;
+    socket!.emit('tracking:stop', {'rideId': rideId});
   }
 
   // قطع الاتصال عند الخروج أو تحول الكابتن لـ Offline

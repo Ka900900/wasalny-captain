@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:waslny_captain/core/network/api_exceptions.dart';
 import 'package:waslny_captain/core/network/dio_client.dart';
 import 'package:waslny_captain/core/models/ride_model.dart';
+import 'package:waslny_captain/core/models/notification_models.dart';
 import 'package:waslny_captain/core/utils/logger.dart';
 
 /// HTTP API client for communicating with the Waslny Backend API.
@@ -174,6 +175,84 @@ class ApiService {
       return false;
     } catch (e) {
       logError('ApiService', 'updateFcmTokenToServer error: $e', e);
+      return false;
+    }
+  }
+
+  // ── Captain Notifications Inbox ─────────────────────
+
+  /// Fetches the captain's notifications from the backend inbox.
+  ///
+  /// GET /api/v1/captain/notifications
+  /// Returns `{ notifications: [...], pagination, unreadCount }`.
+  /// Returns `null` when the backend is unreachable/failed (so the caller can
+  /// fall back to Firestore), and a (possibly empty) list on success.
+  Future<List<AppNotification>?> fetchCaptainNotifications() async {
+    if (!backendEnabled) return null;
+    await _ensureTokenLoaded();
+    try {
+      final response = await _dio.get('/captain/notifications');
+      final data = response.data as Map<String, dynamic>?;
+      final items = data?['notifications'] as List<dynamic>? ?? const [];
+      final notifications = items
+          .whereType<Map<String, dynamic>>()
+          .map(AppNotification.fromBackendJson)
+          .toList();
+      logInfo(
+        'ApiService',
+        '✅ Fetched ${notifications.length} captain notifications',
+      );
+      return notifications;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'fetchCaptainNotifications failed: ${e.response?.statusCode} ${e.response?.data}',
+      );
+      return null;
+    } catch (e) {
+      logError('ApiService', 'fetchCaptainNotifications error: $e', e);
+      return null;
+    }
+  }
+
+  /// Marks a single captain notification as read.
+  ///
+  /// PATCH /api/v1/captain/notifications/:id/read
+  Future<bool> markCaptainNotificationRead(String notificationId) async {
+    if (!backendEnabled) return false;
+    await _ensureTokenLoaded();
+    try {
+      await _dio.patch('/captain/notifications/$notificationId/read');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'markCaptainNotificationRead failed: ${e.response?.statusCode} ${e.response?.data}',
+      );
+      return false;
+    } catch (e) {
+      logError('ApiService', 'markCaptainNotificationRead error: $e', e);
+      return false;
+    }
+  }
+
+  /// Marks all captain notifications as read.
+  ///
+  /// POST /api/v1/captain/notifications/read-all
+  Future<bool> markAllCaptainNotificationsRead() async {
+    if (!backendEnabled) return false;
+    await _ensureTokenLoaded();
+    try {
+      await _dio.post('/captain/notifications/read-all');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'markAllCaptainNotificationsRead failed: ${e.response?.statusCode} ${e.response?.data}',
+      );
+      return false;
+    } catch (e) {
+      logError('ApiService', 'markAllCaptainNotificationsRead error: $e', e);
       return false;
     }
   }
@@ -629,7 +708,7 @@ class ApiService {
   Future<bool> arriveRide(String rideId) async {
     if (!backendEnabled) return true;
     try {
-      await _dio.put('/driver/ride/arrive/$rideId');
+      await _dio.put('/driver/ride/arrived/$rideId');
       return true;
     } on DioException catch (e) {
       logWarning(

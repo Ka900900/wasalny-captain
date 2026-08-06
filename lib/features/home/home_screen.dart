@@ -111,6 +111,12 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       // لربط مستندها الخاص في Firestore عبر startRideStatusListenerById.
     };
 
+    // ── استقبال تحديثات حالة الرحلة النشطة + الإلغاء عبر السوكيت ──
+    // بديل موثوق (غير مرتبط بمشروع Firestore): بعد قبول الرحلة ينضم الكابتن
+    // لغرفة `ride:{rideId}` عبر joinRide ويستقبل أحداث الحالة والإلغاء لحظياً.
+    SocketService().onRideStatusUpdate = _handleSocketRideStatus;
+    SocketService().onRideCancelled = _handleSocketRideCancelled;
+
     // ── Fallback من FCM عند وصول رسالة new_ride في المقدّمة (Foreground) ──
     // لو السوكيت تأخر/فشل → نبني RideModel من بيانات الإشعار ونعرض نفس الكارت
     // (فقط لو الكابتن Online). لو Offline → لا كارت قبول.
@@ -132,36 +138,19 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     // أي تغيير في حالة الرحلة (من Firestore) → حدّث الكارت فوراً
     RealtimeService.instance.onRideStatusChanged = (updatedRide) {
       if (!mounted) return;
-      // انتهت الرحلة: صفّر الكارت + أظهر رسالة نجاح
+      // انتهت الرحلة: صفّر الكارت + أظهر رسالة نجاح (مرة واحدة فقط
+      // بفضل الحارس _activeTripId داخل _handleRideCompleted).
       if (updatedRide.status == RideStatus.completed) {
-        RealtimeService.instance.stopRideStatusListener();
-        _activeTripId = null;
-        setState(() => _currentRideRequest = null);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'انتهت الرحلة بنجاح — يمكنك استلام التقييم والأرباح قريباً.',
-            ),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        _handleRideCompleted();
         return;
       }
       setState(() => _currentRideRequest = updatedRide);
     };
 
-    // إلغاء الرحلة (من العميل/الباك إند) → أخفِ الكارت + SnackBar
+    // إلغاء الرحلة (من العميل/الباك إند عبر مستمع Firestore) → أخفِ الكارت.
+    // تُنفَّذ مرة واحدة فقط بفضل الحارس `_activeTripId` داخل _handleRideCancelled.
     RealtimeService.instance.onRideCancelled = () {
-      if (!mounted) return;
-      RealtimeService.instance.stopRideStatusListener();
-      _activeTripId = null;
-      setState(() => _currentRideRequest = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إلغاء الرحلة من قبل العميل.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      _handleRideCancelled();
     };
 
     // لا يوجد مستمع لرحلات معلّقة عبر Firestore بعد الآن (استُبدل بالسوكيت).
@@ -176,6 +165,9 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     _locationTimer = null;
     RealtimeService.instance.stopRideListener();
     RealtimeService.instance.stopRideStatusListener();
+    // إلغاء تسجيل الـ callbacks الخاص بالسوكيت لمنع التسريبات.
+    SocketService().onRideStatusUpdate = null;
+    SocketService().onRideCancelled = null;
     SocketService().disconnect();
     // إلغاء تسجيل الـ callback الخاص بـ Fallback الإشعارات لمنع التسريبات.
     NotificationService.instance.onNewRideMessage = null;
@@ -392,8 +384,20 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     // في Firestore (rides/{rideId}) — لا علاقة للمستمع العام المُعطّل.
     RealtimeService.instance.stopRideStatusListener();
     RealtimeService.instance.startRideStatusListenerById(ride.id);
+    // انضم لغرفة الرحلة في السوكيت لاستقبال أحداث الحالة/الإلغاء لحظياً
+    // (بديل موثوق غير مرتبط بمشروع Firestore).
+    SocketService().joinRide(ride.id);
     _activeTripId = ride.id;
-    // ملاحظة: لا نحدّث الحالة هنا — الـ Stream سيتلقى "accepted" ويعرض TripStatusCard.
+    // ⚠️ إصلاح الحظر: نحدّث الحالة محلياً فوراً حتى لا يتعطل الـ UI إذا لم تصل
+    // المزامنة الريل-تايم (سوكيت/Firestore) — الـ Stream يبقى احتياطياً وسيحدّث
+    // نفس القيمة عند وصولها (تحديث idempotent).
+    if (mounted) {
+      setState(() {
+        _currentRideRequest = _currentRideRequest?.copyWith(
+          status: RideStatus.accepted,
+        );
+      });
+    }
   }
 
   /// رفض طلب الرحلة (يدوياً أو بانتهاء العدّاد) — حدث لحظي لا يُعاد بثّه،
@@ -448,8 +452,17 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           backgroundColor: Color.fromARGB(255, 43, 42, 41),
         ),
       );
+      return;
     }
-    // الـ Stream سيتلقى "arrived" ويحدّث الـ UI تلقائياً.
+    // ⚠️ إصلاح الحظر: حدّث الحالة محلياً فوراً (احتياطي لتعطّل الريل-تايم).
+    if (mounted) {
+      setState(() {
+        _currentRideRequest = _currentRideRequest?.copyWith(
+          status: RideStatus.arrived,
+        );
+      });
+    }
+    // الـ Stream سيتلقى "arrived" ويحدّث الـ UI تلقائياً (مطابق/متكرر آمن).
   }
 
   /// بدء الرحلة عند ركوب العميل — مُشغّل فقط (Trigger).
@@ -473,8 +486,17 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           backgroundColor: Color.fromARGB(255, 43, 42, 41),
         ),
       );
+      return;
     }
-    // الـ Stream سيتلقى "started" ويحدّث الـ UI تلقائياً.
+    // ⚠️ إصلاح الحظر: حدّث الحالة محلياً فوراً (احتياطي لتعطّل الريل-تايم).
+    if (mounted) {
+      setState(() {
+        _currentRideRequest = _currentRideRequest?.copyWith(
+          status: RideStatus.started,
+        );
+      });
+    }
+    // الـ Stream سيتلقى "started" ويحدّث الـ UI تلقائياً (مطابق/متكرر آمن).
   }
 
   /// إنهاء الرحلة عند الوصول للوجهة — مُشغّل فقط (Trigger).
@@ -498,8 +520,89 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           backgroundColor: Color.fromARGB(255, 48, 47, 46),
         ),
       );
+      return;
     }
-    // الـ Stream سيتلقى "completed" ويصفّر الكارت + يظهر رسالة النجاح.
+    // ⚠️ إصلاح الحظر: نُنهي الرحلة محلياً فوراً (تصفير الكارت + رسالة نجاح)
+    // حتى لا يتعطل الـ UI إذا لم تصل مزامنة الريل-تايم. الحارس `_activeTripId`
+    // يضمن تنفيذ هذا مرة واحدة فقط حتى لو وصلت المزامنة أيضاً.
+    _handleRideCompleted();
+  }
+
+  /// إنهاء الرحلة محلياً (تصفير الكارت + رسالة نجاح) — يُستدعى من
+  /// نجاح `completeRide` ومن مستمع الـ Stream عند وصول "completed".
+  /// يُنفَّذ مرة واحدة فقط بفضل الحارس `_activeTripId`.
+  void _handleRideCompleted() {
+    if (!mounted || _activeTripId == null) return;
+    RealtimeService.instance.stopRideStatusListener();
+    SocketService().leaveRide(_activeTripId!);
+    _activeTripId = null;
+    setState(() => _currentRideRequest = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'انتهت الرحلة بنجاح — يمكنك استلام التقييم والأرباح قريباً.',
+        ),
+        backgroundColor: AppColors.success,
+      ),
+    );
+  }
+
+  /// معالجة تحديث حالة رحلة نشطة وصل عبر السوكيت (`ride.status_update`).
+  /// الباك إند يرسل الحالة بحروف كبيرة (ACCEPTED...) — نتعامل مع الحالتين.
+  /// التحديثات هنا مطابقة/مكررة آمنة مع التحديث المحلي بعد نجاح REST.
+  void _handleSocketRideStatus(
+    String rideId,
+    String status,
+    Map<String, dynamic> data,
+  ) {
+    if (!mounted) return;
+    // نتجاهل أحداث رحلات غير الرحلة النشطة (حماية إضافية).
+    if (_activeTripId != null && rideId != _activeTripId) return;
+    final normalized = status.toLowerCase();
+    switch (normalized) {
+      case 'accepted':
+      case 'arrived':
+      case 'started':
+        final newStatus = RideStatus.values.firstWhere(
+          (s) => s.name == normalized,
+          orElse: () => RideStatus.accepted,
+        );
+        setState(() {
+          _currentRideRequest = _currentRideRequest?.copyWith(
+            status: newStatus,
+          );
+        });
+        break;
+      case 'completed':
+        _handleRideCompleted();
+        break;
+      case 'cancelled':
+        _handleRideCancelled();
+        break;
+    }
+  }
+
+  /// معالجة إلغاء الرحلة من العميل وصل عبر السوكيت (`ride.cancelled`).
+  void _handleSocketRideCancelled(String rideId, String? reason) {
+    if (!mounted) return;
+    if (_activeTripId != null && rideId != _activeTripId) return;
+    _handleRideCancelled();
+  }
+
+  /// إلغاء الرحلة محلياً (تصفير الكارت + رسالة) — يُنفَّذ مرة واحدة فقط
+  /// بفضل الحارس `_activeTripId`.
+  void _handleRideCancelled() {
+    if (!mounted || _activeTripId == null) return;
+    RealtimeService.instance.stopRideStatusListener();
+    SocketService().leaveRide(_activeTripId!);
+    _activeTripId = null;
+    setState(() => _currentRideRequest = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تم إلغاء الرحلة من قبل العميل.'),
+        backgroundColor: AppColors.error,
+      ),
+    );
   }
 
   /// فتح شاشة المحادثة الريل تايم مع الراكب أثناء الرحلة النشطة.

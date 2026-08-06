@@ -38,6 +38,7 @@ void handleNotificationTap(AppNotification notification) {
     case NotificationType.walletUpdate:
       nav.push(MaterialPageRoute(builder: (_) => const WalletScreen()));
     case NotificationType.promotion:
+    case NotificationType.adminAnnouncement:
       nav.push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
   }
 }

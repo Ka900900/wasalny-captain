@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:waslny_captain/core/theme/app_theme.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
+import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/repositories/notification_repository.dart';
 import 'package:waslny_captain/core/models/notification_models.dart';
 
@@ -16,6 +17,7 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final NotificationRepository _repo = NotificationRepository.instance;
+  final ApiService _api = ApiService.instance;
 
   List<AppNotification> _notifications = [];
   bool _loading = true;
@@ -42,7 +44,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return;
     }
 
-    // Stream notifications in real time
+    // Try the backend inbox first (admin announcements + server notifications).
+    final backendList = await _api.fetchCaptainNotifications();
+    if (backendList != null) {
+      if (mounted) {
+        setState(() {
+          _notifications = backendList;
+          _loading = false;
+        });
+      }
+      return;
+    }
+
+    // Backend unreachable → fall back to the Firestore real-time stream.
     _sub = _repo.streamNotifications(uid).listen((list) {
       if (mounted) {
         setState(() {
@@ -53,17 +67,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
-  /// Mark a single notification as read.
+  /// Mark a single notification as read (backend + Firestore, best-effort).
   Future<void> _markAsRead(AppNotification notif) async {
     final uid = AuthService.instance.currentUser?.uid;
     if (uid == null) return;
+    await _api.markCaptainNotificationRead(notif.id);
     await _repo.markAsRead(uid, notif.id);
   }
 
-  /// Mark all as read.
+  /// Mark all as read (backend + Firestore, best-effort).
   Future<void> _markAllAsRead() async {
     final uid = AuthService.instance.currentUser?.uid;
     if (uid == null) return;
+    await _api.markAllCaptainNotificationsRead();
     await _repo.markAllAsRead(uid);
   }
 
@@ -103,7 +119,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.notifications_none_rounded, size: 80, color: AppColors.textMuted),
+            Icon(
+              Icons.notifications_none_rounded,
+              size: 80,
+              color: AppColors.textMuted,
+            ),
             const SizedBox(height: 16),
             Text(
               'لا توجد إشعارات',
@@ -128,19 +148,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       color: AppColors.primary,
       onRefresh: () async {
         final uid = AuthService.instance.currentUser?.uid;
-        if (uid != null) {
-          final list = await _repo.fetchNotifications(uid);
+        if (uid == null) return;
+        // Try the backend inbox first, then fall back to Firestore.
+        final backendList = await _api.fetchCaptainNotifications();
+        if (backendList != null) {
           if (mounted) {
             setState(() {
-              _notifications = list;
+              _notifications = backendList;
             });
           }
+          return;
+        }
+        final list = await _repo.fetchNotifications(uid);
+        if (mounted) {
+          setState(() {
+            _notifications = list;
+          });
         }
       },
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: _notifications.length,
-        separatorBuilder: (_, _) => const Divider(height: 1, color: AppColors.border),
+        separatorBuilder: (_, _) =>
+            const Divider(height: 1, color: AppColors.border),
         itemBuilder: (context, index) {
           final notif = _notifications[index];
           return _NotificationTile(
@@ -160,10 +190,7 @@ class _NotificationTile extends StatelessWidget {
   final AppNotification notification;
   final VoidCallback onTap;
 
-  const _NotificationTile({
-    required this.notification,
-    required this.onTap,
-  });
+  const _NotificationTile({required this.notification, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -175,7 +202,9 @@ class _NotificationTile extends StatelessWidget {
         color: unread ? AppColors.card : AppColors.primaryBg,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(
-          color: unread ? AppColors.primary.withValues(alpha: 0.2) : AppColors.border,
+          color: unread
+              ? AppColors.primary.withValues(alpha: 0.2)
+              : AppColors.border,
         ),
       ),
       child: ListTile(
@@ -224,6 +253,8 @@ class _NotificationTile extends StatelessWidget {
         return Icons.account_balance_wallet;
       case NotificationType.promotion:
         return Icons.local_offer;
+      case NotificationType.adminAnnouncement:
+        return Icons.campaign;
     }
   }
 
@@ -237,6 +268,8 @@ class _NotificationTile extends StatelessWidget {
         return AppColors.primary;
       case NotificationType.promotion:
         return AppColors.info;
+      case NotificationType.adminAnnouncement:
+        return AppColors.primary;
     }
   }
 }
