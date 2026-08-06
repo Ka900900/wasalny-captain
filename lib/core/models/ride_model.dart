@@ -139,7 +139,10 @@ class RideModel {
           (json['riderPhone'] ??
                   json['userPhone'] ??
                   json['phone'] ??
-                  json['phoneNumber'])
+                  json['phoneNumber'] ??
+                  _nestedPhone(json['rider']) ??
+                  _nestedPhone(json['user']) ??
+                  _nestedPhone(json['passenger']))
               as String?,
       pickupAddress:
           (json['pickupAddress'] ??
@@ -279,5 +282,15 @@ class RideModel {
       default:
         return RideStatus.pending;
     }
+  }
+
+  /// استخراج رقم هاتف الراكب من كائن متداخل مثل `{ rider: { phoneNumber } }`
+  /// (كما يُرجع الباك إند من `GET /rides/current`).
+  static String? _nestedPhone(dynamic obj) {
+    if (obj is Map) {
+      final v = obj['phoneNumber'] ?? obj['phone'] ?? obj['riderPhone'];
+      return v?.toString();
+    }
+    return null;
   }
 }

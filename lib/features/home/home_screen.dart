@@ -530,8 +530,26 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   }
 
   /// فتح متصفح الهاتف لطلب الاتصال بالراكب.
-  void _callRider(RideModel ride) {
-    final phone = ride.riderPhone;
+  ///
+  /// الاتصال محلي 100% عبر `url_launcher` بـ `tel:` — لا يُستدعى أي API للاتصال.
+  /// لو كان رقم الراكب غير موجود في بيانات الرحلة الحالية، نجلبها بصمت من
+  /// تفاصيل الرحلة (`GET /rides/current` — مسار محمي بالتوكن فقط بدون
+  /// `requireRole`، فلا تظهر رسالة «هذا المسار مخصص لـ CAPTAIN فقط» أبداً).
+  Future<void> _callRider(RideModel ride) async {
+    String? phone = ride.riderPhone;
+
+    // Fallback آمن: رقم غير موجود في النموذج → جلب تفاصيل الرحلة الحالية.
+    // أي فشل (شبكة/صلاحيات/غير متوفر) يُتجاهل بصمت — الاتصال محلي ولا نظهر
+    // رسائل API للمستخدم.
+    if (phone == null || phone.isEmpty) {
+      try {
+        final current = await ApiService.instance.getCurrentRide();
+        phone = current?.riderPhone;
+      } catch (_) {
+        // Silent — لا نعرض أخطاء الـ API أبداً على زر الاتصال.
+      }
+    }
+
     if (phone == null || phone.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -544,7 +562,9 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       return;
     }
     final uri = Uri.parse('tel:$phone');
-    launchUrl(uri).catchError((_) {
+    try {
+      await launchUrl(uri);
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -553,8 +573,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           ),
         );
       }
-      return true; // منع انتشار الخطأ
-    });
+    }
   }
 
   Future<void> _uploadCurrentPosition() async {

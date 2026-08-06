@@ -718,6 +718,30 @@ class ApiService {
     }
   }
 
+  /// جلب تفاصيل الرحلة الحالية من الباك إند (`GET /rides/current`).
+  ///
+  /// يستخدمه زر «اتصال» كـ Fallback آمن عند عدم توفر رقم الراكب في بيانات
+  /// الرحلة الحالية: هذا المسار محمي بـ `authenticateToken` فقط (بدون أي
+  /// `requireRole`)، فيعمل بسلاسة مع توكن الكابتن بدور `DRIVER` دون إظهار
+  /// رسالة «هذا المسار مخصص لـ CAPTAIN فقط».
+  ///
+  /// يُرجع [RideModel?] معبأً برقم هاتف الراكب (المُستخرج من `rider.phoneNumber`)،
+  /// أو `null` عند الفشل — لا يرمي أبداً حتى لا تظهر أخطاء API للمستخدم.
+  Future<RideModel?> getCurrentRide() async {
+    if (!backendEnabled) return null;
+    await _ensureTokenLoaded();
+    try {
+      final response = await _dio.get('/rides/current');
+      final body = response.data as Map<String, dynamic>;
+      final rideJson = body['ride'] as Map<String, dynamic>?;
+      if (rideJson == null) return null;
+      return RideModel.fromJson(rideJson);
+    } catch (e) {
+      logWarning('ApiService', 'getCurrentRide error: $e');
+      return null;
+    }
+  }
+
   // ── User Endpoints ───────────────────────────────────
 
   /// Get user profile
