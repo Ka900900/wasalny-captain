@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -18,6 +20,7 @@ class TripStatusCard extends StatelessWidget {
   final VoidCallback onMarkStarted;
   final VoidCallback onMarkCompleted;
   final VoidCallback onBackToHome;
+  final VoidCallback? onCallTap;
   final VoidCallback? onOpenChat;
 
   const TripStatusCard({
@@ -34,6 +37,7 @@ class TripStatusCard extends StatelessWidget {
     required this.onMarkStarted,
     required this.onMarkCompleted,
     required this.onBackToHome,
+    this.onCallTap,
     this.onOpenChat,
   });
 
@@ -53,6 +57,7 @@ class TripStatusCard extends StatelessWidget {
           distance: distance ?? '',
           etaText: etaText,
           onMarkArrived: onMarkArrived,
+          onCallTap: onCallTap,
           onOpenChat: onOpenChat,
         );
       case 'arrived':
@@ -64,6 +69,7 @@ class TripStatusCard extends StatelessWidget {
               '...',
           price: price ?? tripDoc?['price'] as String? ?? '...',
           onMarkStarted: onMarkStarted,
+          onCallTap: onCallTap,
           onOpenChat: onOpenChat,
         );
       case 'started':
@@ -79,6 +85,7 @@ class TripStatusCard extends StatelessWidget {
           distance: distance ?? '',
           etaText: etaText,
           onMarkCompleted: onMarkCompleted,
+          onCallTap: onCallTap,
           onOpenChat: onOpenChat,
         );
       case 'completed':
@@ -106,6 +113,7 @@ class _AcceptedCard extends StatelessWidget {
   final String distance;
   final String? etaText;
   final VoidCallback onMarkArrived;
+  final VoidCallback? onCallTap;
   final VoidCallback? onOpenChat;
 
   const _AcceptedCard({
@@ -116,6 +124,7 @@ class _AcceptedCard extends StatelessWidget {
     required this.distance,
     this.etaText,
     required this.onMarkArrived,
+    this.onCallTap,
     this.onOpenChat,
   });
 
@@ -141,8 +150,10 @@ class _AcceptedCard extends StatelessWidget {
           _FareDistanceRow(distance: distance, price: price),
           if (etaText != null) _EtaRow(etaText: etaText!),
           const SizedBox(height: 16),
-          if (onOpenChat != null) _ChatButton(onOpenChat: onOpenChat!),
-          if (onOpenChat != null) const SizedBox(height: 10),
+          if (onCallTap != null || onOpenChat != null)
+            _ContactRow(onCall: onCallTap, onOpenChat: onOpenChat),
+          if (onCallTap != null || onOpenChat != null)
+            const SizedBox(height: 10),
           _ActionButton(
             label: '✅ وصلت',
             color: AppColors.success,
@@ -158,11 +169,12 @@ class _AcceptedCard extends StatelessWidget {
 // ARRIVED — captain waiting at pickup
 // ═══════════════════════════════════════════════════════════════
 
-class _ArrivedCard extends StatelessWidget {
+class _ArrivedCard extends StatefulWidget {
   final String riderName;
   final String destination;
   final String price;
   final VoidCallback onMarkStarted;
+  final VoidCallback? onCallTap;
   final VoidCallback? onOpenChat;
 
   const _ArrivedCard({
@@ -170,8 +182,49 @@ class _ArrivedCard extends StatelessWidget {
     required this.destination,
     required this.price,
     required this.onMarkStarted,
+    this.onCallTap,
     this.onOpenChat,
   });
+
+  @override
+  State<_ArrivedCard> createState() => _ArrivedCardState();
+}
+
+/// حالة بطاقة «في الانتظار» — تعرض عداد انتظار 5 دقائق (مدة السماح قبل غرامة
+/// التأخير 10 ج.م). العداد محلي في الـ UI فقط؛ الغرامة تُفرض من الباك إند
+/// عبر `processDueLateFees` عند انقضاء المدة.
+class _ArrivedCardState extends State<_ArrivedCard> {
+  static const Duration _waitDuration = Duration(minutes: 5);
+
+  late Duration _remaining = _waitDuration;
+  Timer? _timer;
+
+  bool get _expired => _remaining <= Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_remaining <= Duration.zero) {
+        _timer?.cancel();
+        return;
+      }
+      setState(() => _remaining = _remaining - const Duration(seconds: 1));
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String get _remainingLabel {
+    final m = _remaining.inMinutes;
+    final s = _remaining.inSeconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -182,22 +235,29 @@ class _ArrivedCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _HeaderRow(
-            riderName: riderName,
+            riderName: widget.riderName,
             badgeIcon: Icons.access_time,
             badgeText: 'في الانتظار',
             badgeColor: AppColors.info,
           ),
           const SizedBox(height: 14),
-          _DestinationRow(address: destination),
+          _DestinationRow(address: widget.destination),
           const SizedBox(height: 16),
-          _FareRow(price: price),
+          _FareRow(price: widget.price),
           const SizedBox(height: 16),
-          if (onOpenChat != null) _ChatButton(onOpenChat: onOpenChat!),
-          if (onOpenChat != null) const SizedBox(height: 10),
+          _WaitingCountdownRow(label: _remainingLabel, expired: _expired),
+          const SizedBox(height: 16),
+          if (widget.onCallTap != null || widget.onOpenChat != null)
+            _ContactRow(
+              onCall: widget.onCallTap,
+              onOpenChat: widget.onOpenChat,
+            ),
+          if (widget.onCallTap != null || widget.onOpenChat != null)
+            const SizedBox(height: 10),
           _ActionButton(
             label: '🚗 بدأت الرحلة',
             color: AppColors.primary,
-            onPressed: onMarkStarted,
+            onPressed: widget.onMarkStarted,
           ),
         ],
       ),
@@ -217,6 +277,7 @@ class _StartedCard extends StatelessWidget {
   final String distance;
   final String? etaText;
   final VoidCallback onMarkCompleted;
+  final VoidCallback? onCallTap;
   final VoidCallback? onOpenChat;
 
   const _StartedCard({
@@ -227,6 +288,7 @@ class _StartedCard extends StatelessWidget {
     required this.distance,
     this.etaText,
     required this.onMarkCompleted,
+    this.onCallTap,
     this.onOpenChat,
   });
 
@@ -252,8 +314,10 @@ class _StartedCard extends StatelessWidget {
           _FareDistanceRow(distance: distance, price: price),
           if (etaText != null) _EtaRow(etaText: etaText!),
           const SizedBox(height: 16),
-          if (onOpenChat != null) _ChatButton(onOpenChat: onOpenChat!),
-          if (onOpenChat != null) const SizedBox(height: 10),
+          if (onCallTap != null || onOpenChat != null)
+            _ContactRow(onCall: onCallTap, onOpenChat: onOpenChat),
+          if (onCallTap != null || onOpenChat != null)
+            const SizedBox(height: 10),
           _ActionButton(
             label: '✅ أكملت',
             color: AppColors.success,
@@ -639,6 +703,117 @@ class _ChatButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Call button — يفتح طلب اتصال `tel:` برقم الراكب عبر `url_launcher`
+/// (محلي 100% — لا يُستدعى أي API للاتصال).
+class _CallButton extends StatelessWidget {
+  final VoidCallback onCall;
+
+  const _CallButton({required this.onCall});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: OutlinedButton.icon(
+        onPressed: onCall,
+        icon: const Icon(Icons.phone_outlined, size: 18),
+        label: const Text('اتصال'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.success,
+          side: BorderSide(color: AppColors.success.withValues(alpha: 0.5)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// صف تواصل: زر اتصال + زر محادثة جنباً إلى جنب (أو أحدهما فقط بعرض كامل).
+class _ContactRow extends StatelessWidget {
+  final VoidCallback? onCall;
+  final VoidCallback? onOpenChat;
+
+  const _ContactRow({this.onCall, this.onOpenChat});
+
+  @override
+  Widget build(BuildContext context) {
+    if (onCall == null && onOpenChat == null) return const SizedBox.shrink();
+
+    final List<Widget> children = [];
+    if (onCall != null) {
+      children.add(Expanded(child: _CallButton(onCall: onCall!)));
+    }
+    if (onOpenChat != null) {
+      if (children.isNotEmpty) children.add(const SizedBox(width: 10));
+      children.add(Expanded(child: _ChatButton(onOpenChat: onOpenChat!)));
+    }
+    return Row(children: children);
+  }
+}
+
+/// عداد مدة الانتظار (5 دقائق) — يُعرض في بطاقة «في الانتظار».
+class _WaitingCountdownRow extends StatelessWidget {
+  final String label;
+  final bool expired;
+
+  const _WaitingCountdownRow({required this.label, required this.expired});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = expired ? AppColors.error : AppColors.info;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            expired ? Icons.timer_off_outlined : Icons.timer_outlined,
+            size: 20,
+            color: color,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  expired ? 'انتهت مدة الانتظار' : 'مدة الانتظار المتبقية',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (!expired)
+                  Text(
+                    'بعد انتهاء المدة قد تُطبَّق غرامة تأخير (10 ج.م)',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
       ),
     );
   }

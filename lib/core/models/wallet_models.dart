@@ -183,15 +183,31 @@ class WalletData {
   });
 
   factory WalletData.fromMap(Map<String, dynamic> map) {
-    final balance = (map['balance'] as num?)?.toDouble() ?? 0;
+    final balanceValue = map['balance'];
+    final balance = balanceValue is num
+        ? balanceValue.toDouble()
+        : double.tryParse(balanceValue?.toString() ?? '') ?? 0;
+
     return WalletData(
       balance: balance,
-      pendingWithdraw: (map['pendingWithdraw'] as num?)?.toDouble() ?? 0,
-      totalEarned: (map['totalEarned'] as num?)?.toDouble() ?? 0,
-      totalWithdrawn: (map['totalWithdrawn'] as num?)?.toDouble() ?? 0,
-      minBalance: (map['minBalance'] as num?)?.toDouble() ?? -300,
-      maxBalance: (map['maxBalance'] as num?)?.toDouble() ?? 1500,
-      minTopUp: (map['minTopUp'] as num?)?.toDouble() ?? 10,
+      pendingWithdraw: map['pendingWithdraw'] is num
+          ? (map['pendingWithdraw'] as num).toDouble()
+          : double.tryParse(map['pendingWithdraw']?.toString() ?? '') ?? 0,
+      totalEarned: map['totalEarned'] is num
+          ? (map['totalEarned'] as num).toDouble()
+          : double.tryParse(map['totalEarned']?.toString() ?? '') ?? 0,
+      totalWithdrawn: map['totalWithdrawn'] is num
+          ? (map['totalWithdrawn'] as num).toDouble()
+          : double.tryParse(map['totalWithdrawn']?.toString() ?? '') ?? 0,
+      minBalance: map['minBalance'] is num
+          ? (map['minBalance'] as num).toDouble()
+          : double.tryParse(map['minBalance']?.toString() ?? '') ?? -300,
+      maxBalance: map['maxBalance'] is num
+          ? (map['maxBalance'] as num).toDouble()
+          : double.tryParse(map['maxBalance']?.toString() ?? '') ?? 1500,
+      minTopUp: map['minTopUp'] is num
+          ? (map['minTopUp'] as num).toDouble()
+          : double.tryParse(map['minTopUp']?.toString() ?? '') ?? 10,
       canAcceptRides: (map['canAcceptRides'] as bool?) ?? (balance > -300),
       canWithdraw: (map['canWithdraw'] as bool?) ?? (balance > 0),
     );

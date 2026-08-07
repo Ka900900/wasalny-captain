@@ -93,6 +93,28 @@ class _WalletScreenState extends State<WalletScreen> {
     ]);
   }
 
+  Future<void> _refreshWalletState({bool showLoading = false}) async {
+    if (_uid.isEmpty) return;
+
+    if (showLoading && mounted) {
+      setState(() => _loadingWallet = true);
+    }
+
+    try {
+      final data = await WalletRepository.instance.refreshWallet(_uid);
+      if (mounted) {
+        setState(() {
+          _walletData = data;
+          _loadingWallet = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingWallet = false);
+      }
+    }
+  }
+
   Future<void> _loadTransactions(String uid) async {
     try {
       final list = await WalletRepository.instance.fetchTransactions(uid);
@@ -1589,55 +1611,64 @@ class _WalletScreenState extends State<WalletScreen> {
 
                                   if (!mounted) return;
 
-                                  if (success == true) {
-                                    ScaffoldMessenger.of(
-                                      this.context,
-                                    ).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('جاري تأكيد الدفع…'),
-                                        backgroundColor: Color(0xFFF59E0B),
-                                      ),
-                                    );
-                                  }
+                                  final orderId =
+                                      response['orderId']?.toString() ?? '';
+                                  final shouldConfirm =
+                                      success == true ||
+                                      (orderId.isNotEmpty &&
+                                          sessionId.isNotEmpty);
 
-                                  // Step 3: Always refresh wallet data after the checkout closes
-                                  await Future.wait([
-                                    _loadTransactions(uid),
-                                    _loadAll(),
-                                  ]);
+                                  if (shouldConfirm) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        this.context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('جاري تأكيد الدفع…'),
+                                          backgroundColor: Color(0xFFF59E0B),
+                                        ),
+                                      );
+                                    }
 
-                                  if (success == true) {
                                     try {
                                       await ApiService.instance.confirmTopUp(
-                                        orderId:
-                                            response['orderId']?.toString() ??
-                                            '',
+                                        orderId: orderId,
                                         sessionId: sessionId,
+                                      );
+                                      await _refreshWalletState(
+                                        showLoading: true,
                                       );
                                       await Future.wait([
                                         _loadTransactions(uid),
-                                        _loadAll(),
+                                        _loadWithdrawRequests(uid),
+                                        _loadPaymentMethods(uid),
                                       ]);
+
                                       if (mounted) {
+                                        final balance =
+                                            _walletData?.balance ?? 0;
                                         ScaffoldMessenger.of(
                                           this.context,
                                         ).showSnackBar(
-                                          const SnackBar(
+                                          SnackBar(
                                             content: Text(
-                                              'تم شحن المحفظة بنجاح!',
+                                              'تم شحن المحفظة بنجاح! الرصيد الحالي: ${balance.toStringAsFixed(2)} ج.م',
                                             ),
                                             backgroundColor: Color(0xFF22C55E),
                                           ),
                                         );
                                       }
                                     } catch (_) {
+                                      await _refreshWalletState(
+                                        showLoading: true,
+                                      );
                                       if (mounted) {
                                         ScaffoldMessenger.of(
                                           this.context,
                                         ).showSnackBar(
                                           const SnackBar(
                                             content: Text(
-                                              'تم إغلاق الدفع، سيتم تحديث الرصيد عند التأكيد',
+                                              'تم إغلاق الدفع أو تأكيده، وتم تحديث الرصيد من الخادم',
                                             ),
                                             backgroundColor:
                                                 Colors.orangeAccent,
@@ -1646,6 +1677,9 @@ class _WalletScreenState extends State<WalletScreen> {
                                       }
                                     }
                                   } else {
+                                    await _refreshWalletState(
+                                      showLoading: true,
+                                    );
                                     if (mounted) {
                                       ScaffoldMessenger.of(
                                         this.context,

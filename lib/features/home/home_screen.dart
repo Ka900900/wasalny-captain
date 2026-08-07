@@ -691,8 +691,14 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         latitude: pos.latitude,
         longitude: pos.longitude,
       );
-      // إرسال الموقع للباك إند عبر السوكيت لحظياً
-      SocketService().emitLocation(lat: pos.latitude, lng: pos.longitude);
+      // إرسال الموقع للباك إند عبر السوكيت لحظياً — مع rideId أثناء الرحلة
+      // حتى يوجّه الباك إند `ride.driver_location` لغرفة `ride:{rideId}`
+      // التي ينضمّ إليها الراكب ليرى موقع الكابتن الحقيقي.
+      SocketService().emitLocation(
+        lat: pos.latitude,
+        lng: pos.longitude,
+        rideId: _activeTripId,
+      );
     } catch (_) {
       // Silent — location upload is best-effort
     }
@@ -1147,6 +1153,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                 onMarkCompleted: () => _completeRide(_currentRideRequest!),
                 onBackToHome: () => setState(() => _currentRideRequest = null),
                 onOpenChat: () => _openChat(_currentRideRequest!),
+                onCallTap: () => _callRider(_currentRideRequest!),
               ),
             ),
       ],
