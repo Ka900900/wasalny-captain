@@ -2,34 +2,30 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:waslny_captain/core/services/sound_service.dart';
 import 'package:waslny_captain/core/theme/app_theme.dart';
 
-/// Ride request card shown when a new pending ride arrives.
+/// بطاقة طلب الرحلة الواردة (قبل القبول فقط).
 ///
-/// Displays:
-/// - Countdown timer (circular progress) — managed internally to avoid
-///   forcing parent rebuilds on every tick.
-/// - Fare (prominent)
-/// - Pickup address
-/// - Destination address
-/// - Rider name + trip distance
-/// - Chat / Call buttons (التواصل مع الراكب)
-/// - Accept / Reject buttons
+/// تعرض بوضوح:
+/// - الهيدر: نقطة خضراء + «طلب رحلة جديد» + عداد دائري + اسم الراكب
+/// - المسار: من ← خط ربط ← إلى
+/// - شيبس معلومات (نوع الرحلة / المسافة / المدة التقديرية)
+/// - صندوق السعر (قيمة الرحلة الحقيقية)
+/// - زرّا رفض / قبول الرحلة فقط (لا أزرار اتصال/محادثة)
 ///
-/// The countdown timer is self-contained: only this widget rebuilds
-/// each second instead of the entire parent screen.
+/// العداد الذاتي: فقط هذا الويدجت يُعاد بناؤه كل ثانية بدل الشاشة كاملة.
 class RideRequestCard extends StatefulWidget {
   final String? pickupAddress;
   final String? destinationAddress;
-  final String? price;
+  final String? price; // قيمة الرحلة المنسّقة (ج.م)
   final String? riderName;
-  final String? riderPhone;
-  final String? distance;
+  final String? vehicleType; // لتحديد شيب نوع الرحلة
+  final String? distance; // نص مثل "3.2 كم"
+  final String? etaText; // نص مثل "5 دقائق"
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback? onExpired;
-  final VoidCallback? onChatTap;
-  final VoidCallback? onCallTap;
 
   const RideRequestCard({
     super.key,
@@ -37,13 +33,12 @@ class RideRequestCard extends StatefulWidget {
     this.destinationAddress,
     this.price,
     this.riderName,
-    this.riderPhone,
+    this.vehicleType,
     this.distance,
+    this.etaText,
     required this.onAccept,
     required this.onReject,
     this.onExpired,
-    this.onChatTap,
-    this.onCallTap,
   });
 
   @override
@@ -64,6 +59,9 @@ class _RideRequestCardState extends State<RideRequestCard> {
   @override
   void dispose() {
     _timer?.cancel();
+    // أوقف صوت تنبيه الرحلة المتكرر فوراً عند إزالة الكارت (قبول/رفض/انتهاء
+    // العداد/أي مسار يُخفي الكارت) لضمان عدم استمرار الصوت بعد تفاعل الكابتن.
+    SoundService.instance.stopAlert();
     super.dispose();
   }
 
@@ -80,89 +78,6 @@ class _RideRequestCardState extends State<RideRequestCard> {
     });
   }
 
-  /// عرض حوار قبول/رفض عند الضغط على الكارت نفسه.
-  void _showAcceptRejectDialog() {
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        ),
-        title: Row(
-          children: [
-            Icon(Icons.directions_car, color: AppColors.neonGreen, size: 24),
-            const SizedBox(width: 8),
-            const Text('طلب رحلة', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.pickupAddress != null &&
-                widget.pickupAddress!.isNotEmpty) ...[
-              _DialogRow(
-                icon: Icons.circle,
-                iconColor: AppColors.primary,
-                text: widget.pickupAddress!,
-              ),
-              const SizedBox(height: 8),
-            ],
-            if (widget.destinationAddress != null &&
-                widget.destinationAddress!.isNotEmpty) ...[
-              _DialogRow(
-                icon: Icons.location_on,
-                iconColor: AppColors.error,
-                text: widget.destinationAddress!,
-              ),
-              const SizedBox(height: 8),
-            ],
-            if (widget.price != null && widget.price!.isNotEmpty)
-              Text(
-                'قيمة الرحلة: ${widget.price} جنيه',
-                style: const TextStyle(
-                  color: AppColors.neonGreen,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            if (widget.distance != null && widget.distance!.isNotEmpty)
-              Text(
-                'المسافة: ${widget.distance}',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              widget.onReject();
-            },
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text('رفض', style: TextStyle(fontSize: 16)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              widget.onAccept();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.neonGreen,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('قبول', style: TextStyle(fontSize: 16)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final double countdownValue = _countdownSeconds / _totalSeconds;
@@ -170,218 +85,241 @@ class _RideRequestCardState extends State<RideRequestCard> {
         ? AppColors.error
         : AppColors.primary;
 
-    return GestureDetector(
-      onTap: _showAcceptRejectDialog,
-      child: Semantics(
-        label: 'طلب رحلة جديد',
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          decoration: BoxDecoration(
-            gradient: AppColors.primaryGradient,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-            border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-            boxShadow: AppColors.shadowMd,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Header: Countdown · Title · Fare ──
-              Row(
-                children: [
-                  // Circular countdown
-                  Semantics(
-                    label: 'الوقت المتبقي: $_countdownSeconds ثانية',
-                    child: SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          CircularProgressIndicator(
-                            value: countdownValue,
-                            strokeWidth: 3.5,
-                            backgroundColor: AppColors.border,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              countdownColor,
-                            ),
+    final String rideType = _rideTypeLabel(widget.vehicleType);
+
+    return Semantics(
+      label: 'طلب رحلة جديد',
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+          border: Border.all(color: AppColors.border),
+          boxShadow: AppColors.shadowMd,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── 1) Header: green dot + title + countdown + rider ──
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'طلب رحلة جديد',
+                    style: AppTextStyles.titleMedium?.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                Semantics(
+                  label: 'الوقت المتبقي: $_countdownSeconds ثانية',
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          value: countdownValue,
+                          strokeWidth: 3.5,
+                          backgroundColor: AppColors.border,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            countdownColor,
                           ),
-                          Text(
-                            '$_countdownSeconds',
-                            style: TextStyle(
-                              color: countdownColor,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        ),
+                        Text(
+                          '$_countdownSeconds',
+                          style: TextStyle(
+                            color: countdownColor,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Title
-                  Expanded(
-                    child: Text(
-                      'طلب جديد!',
-                      style: AppTextStyles.headlineSmall?.copyWith(
-                        color: AppColors.primaryBg,
-                      ),
-                    ),
-                  ),
-                  // Fare
-                  Semantics(
-                    label: 'قيمة الرحلة: ${widget.price} جنيه',
-                    child: Text(
-                      widget.price ?? '',
-                      style: AppTextStyles.titleLarge?.copyWith(
-                        color: AppColors.primaryBg,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // ── Pickup ──
-              _AddressRow(
-                icon: Icons.circle,
-                iconColor: AppColors.primary,
-                address: widget.pickupAddress,
-              ),
-              const SizedBox(height: 8),
-
-              // ── Destination ──
-              _AddressRow(
-                icon: Icons.location_on,
-                iconColor: AppColors.error,
-                address: widget.destinationAddress,
-              ),
-              const SizedBox(height: 10),
-
-              // ── Rider name + Distance ──
-              Row(
-                children: [
-                  Icon(
-                    Icons.person_outline,
-                    color: AppColors.textSecondary,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.person_outline,
+                  size: 16,
+                  color: AppColors.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
                     (widget.riderName == null || widget.riderName!.isEmpty)
-                        ? 'عميل'
+                        ? 'راكب جديد'
                         : widget.riderName!,
                     style: AppTextStyles.bodyMedium?.copyWith(
                       color: AppColors.textSecondary,
                     ),
                   ),
-                  if (widget.distance != null) ...[
-                    const SizedBox(width: 20),
-                    Icon(Icons.route, color: AppColors.textSecondary, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      widget.distance!,
-                      style: AppTextStyles.bodyMedium?.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // ── 2) Route: from → connector → to ──
+            _RouteRow(
+              icon: Icons.circle,
+              iconColor: AppColors.primary,
+              label: 'من:',
+              address: widget.pickupAddress,
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Container(width: 2, height: 14, color: AppColors.border),
+            ),
+            _RouteRow(
+              icon: Icons.location_on,
+              iconColor: AppColors.error,
+              label: 'إلى:',
+              address: widget.destinationAddress,
+            ),
+            const SizedBox(height: 14),
+
+            // ── 3) Info chips (single row) ──
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (rideType.isNotEmpty)
+                  _Chip(icon: Icons.directions_car_outlined, label: rideType),
+                if (widget.distance != null && widget.distance!.isNotEmpty)
+                  _Chip(icon: Icons.route, label: widget.distance!),
+                if (widget.etaText != null && widget.etaText!.isNotEmpty)
+                  _Chip(icon: Icons.schedule, label: widget.etaText!),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // ── 4) Price box ──
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'قيمة الرحلة',
+                    style: AppTextStyles.labelMedium?.copyWith(
+                      color: AppColors.textSecondary,
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        widget.price ?? '0',
+                        style: AppTextStyles.amountLarge?.copyWith(
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'ج.م',
+                        style: AppTextStyles.bodyMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-              const SizedBox(height: 14),
+            ),
+            const SizedBox(height: 16),
 
-              // ── Chat / Call buttons (التواصل مع الراكب) ──
-              Row(
-                children: [
-                  if (widget.onChatTap != null)
-                    Expanded(
-                      child: _OutlinedIconButton(
-                        icon: Icons.chat_bubble_outline,
-                        label: 'محادثة',
-                        onTap: widget.onChatTap!,
-                      ),
-                    ),
-                  if (widget.onChatTap != null && widget.onCallTap != null)
-                    const SizedBox(width: 10),
-                  if (widget.onCallTap != null)
-                    Expanded(
-                      child: _OutlinedIconButton(
-                        icon: Icons.phone_outlined,
-                        label: 'اتصال',
-                        onTap: widget.onCallTap!,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // ── Accept / Reject ──
-              Row(
-                children: [
-                  Expanded(
-                    child: Semantics(
-                      label: 'قبول الرحلة',
-                      child: ElevatedButton(
-                        onPressed: () {
-                          _timer?.cancel();
-                          _timer = null;
-                          widget.onAccept();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.bg,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusSm,
-                            ),
+            // ── 5) Buttons: reject (outlined) + accept (primary, wider) ──
+            Row(
+              children: [
+                Expanded(
+                  flex: 1,
+                  child: Semantics(
+                    label: 'رفض الرحلة',
+                    child: OutlinedButton(
+                      onPressed: () {
+                        _timer?.cancel();
+                        _timer = null;
+                        widget.onReject();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textSecondary,
+                        side: BorderSide(color: AppColors.border),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusSm,
                           ),
                         ),
-                        child: const Text(
-                          'قبول',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                      ),
+                      child: const Text(
+                        'رفض',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Semantics(
-                      label: 'رفض الرحلة',
-                      child: ElevatedButton(
-                        onPressed: () {
-                          _timer?.cancel();
-                          _timer = null;
-                          widget.onReject();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.error,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusSm,
-                            ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: Semantics(
+                    label: 'قبول الرحلة',
+                    child: ElevatedButton(
+                      onPressed: () {
+                        _timer?.cancel();
+                        _timer = null;
+                        widget.onAccept();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusSm,
                           ),
                         ),
-                        child: const Text(
-                          'رفض',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                      ),
+                      child: const Text(
+                        'قبول الرحلة',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -389,89 +327,98 @@ class _RideRequestCardState extends State<RideRequestCard> {
 }
 
 /// Helper widget for outlined icon + text buttons (chat / call).
-class _OutlinedIconButton extends StatelessWidget {
+String _rideTypeLabel(String? type) {
+  if (type == null || type.isEmpty) return '';
+  const map = <String, String>{
+    'private': 'ملاكي',
+    'PRIVATE_CAR': 'ملاكي',
+    'taxi': 'تاكسي',
+    'TAXI': 'تاكسي',
+    'scooter': 'سكوتر',
+    'SCOOTER': 'سكوتر',
+    'motorcycle': 'موتوسيكل',
+    'MOTORCYCLE': 'موتوسيكل',
+  };
+  return map[type] ?? type;
+}
+
+/// Small info chip (icon + label) used in the single-row info strip.
+class _Chip extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
 
-  const _OutlinedIconButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _Chip({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      label: label,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 18),
-        label: Text(label, style: const TextStyle(fontSize: 13)),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primaryBg,
-          side: BorderSide(color: AppColors.primaryBg.withValues(alpha: 0.5)),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: AppTextStyles.labelMedium?.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
 
-/// Helper widget for dialog rows (pickup / destination).
-class _DialogRow extends StatelessWidget {
+/// Pickup / destination row with a leading icon, a short label and the address.
+class _RouteRow extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
-  final String text;
-
-  const _DialogRow({
-    required this.icon,
-    required this.iconColor,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: iconColor, size: 16),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Small helper for pickup / destination rows.
-class _AddressRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
+  final String label;
   final String? address;
 
-  const _AddressRow({
+  const _RouteRow({
     required this.icon,
     required this.iconColor,
+    required this.label,
     this.address,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: iconColor, size: 12),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Icon(icon, color: iconColor, size: 14),
+        ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            address ?? '',
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: AppTextStyles.labelSmall?.copyWith(
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                address ?? '',
+                style: AppTextStyles.bodyMedium?.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
       ],

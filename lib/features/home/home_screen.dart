@@ -163,6 +163,8 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   void dispose() {
     _locationTimer?.cancel();
     _locationTimer = null;
+    // أوقف أي صوت تنبيه رحلة متكرر مازال يعمل عند إغلاق الشاشة.
+    SoundService.instance.stopAlert();
     RealtimeService.instance.stopRideListener();
     RealtimeService.instance.stopRideStatusListener();
     // إلغاء تسجيل الـ callbacks الخاص بالسوكيت لمنع التسريبات.
@@ -592,6 +594,9 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   /// إلغاء الرحلة محلياً (تصفير الكارت + رسالة) — يُنفَّذ مرة واحدة فقط
   /// بفضل الحارس `_activeTripId`.
   void _handleRideCancelled() {
+    // أوقف صوت التنبيه فوراً عند إلغاء الرحلة (من العميل أو عبر السوكيت)
+    // سواء كانت مقبولة أم قيد الانتظار، لمنع استمرار الصوت المتكرر.
+    SoundService.instance.stopAlert();
     if (!mounted || _activeTripId == null) return;
     RealtimeService.instance.stopRideStatusListener();
     SocketService().leaveRide(_activeTripId!);
@@ -795,6 +800,9 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
         SocketService().disconnect();
         // أوقف الاستماع لأي رحلة نشطة وأزل الطلب/الرحلة المعروضة
         RealtimeService.instance.stopRideStatusListener();
+        // أوقف صوت تنبيه الرحلة إن كان يعمل (الكابتن تحوّل لـ Offline أثناء
+        // وصول طلب) لمنع استمرار الصوت بعد إخفاء الكارت.
+        SoundService.instance.stopAlert();
         _activeTripId = null;
         if (_currentRideRequest != null) {
           setState(() => _currentRideRequest = null);
@@ -1123,13 +1131,12 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                 destinationAddress: _currentRideRequest!.destinationAddress,
                 price: _currentRideRequest!.fare?.toStringAsFixed(2),
                 riderName: _currentRideRequest!.riderName,
-                riderPhone: _currentRideRequest!.riderPhone,
+                vehicleType: _currentRideRequest!.vehicleType,
                 distance: _currentRideRequest!.distance,
+                etaText: _currentRideRequest!.etaText,
                 onAccept: () => _acceptRide(_currentRideRequest!),
                 onReject: _rejectRide,
                 onExpired: _rejectRide,
-                onChatTap: () => _openChat(_currentRideRequest!),
-                onCallTap: () => _callRider(_currentRideRequest!),
               ),
             )
           else if (_currentRideRequest!.status == RideStatus.accepted ||
