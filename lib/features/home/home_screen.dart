@@ -61,6 +61,9 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   // ── Active trip workflow ──────────────────────────
   String? _activeTripId;
 
+  // ── Route drawing on the map (per phase) ──────────
+  String? _currentRoadKey;
+
   // ── Current incoming ride request (Phase 1) ───────
   RideModel? _currentRideRequest;
 
@@ -398,6 +401,8 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           status: RideStatus.accepted,
         );
       });
+      // ارسم المسار من موقع الكابتن الحالي → نقطة الالتقاط فور القبول.
+      _onTripPhaseChanged();
     }
   }
 
@@ -446,24 +451,27 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
 
     if (mounted) Navigator.pop(context);
 
-    if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تعذر تأكيد الوصول، حاول مرة أخرى.'),
-          backgroundColor: Color.fromARGB(255, 43, 42, 41),
-        ),
-      );
-      return;
-    }
-    // ⚠️ إصلاح الحظر: حدّث الحالة محلياً فوراً (احتياطي لتعطّل الريل-تايم).
+    // ⚠️ مصدر الحقيقة = حالة الباك/السوكيت، لكن نحدّث الـ UI فوراً عند نجاح
+    // الضغط حتى لا يبقى كارت المرحلة السابقة ثابتاً على الشاشة (خاصة إن كان
+    // مسار الباك غير منشور بعد). السوكيت/الـ Stream سيعيد تحديث نفس القيمة
+    // عند وصولها (تحديث idempotent وآمن). عند الفشل نُرجع الكارت للحالة السابقة.
     if (mounted) {
       setState(() {
         _currentRideRequest = _currentRideRequest?.copyWith(
-          status: RideStatus.arrived,
+          status: success ? RideStatus.arrived : RideStatus.accepted,
         );
       });
+      if (success) {
+        _onTripPhaseChanged();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تأكيد الوصول، حاول مرة أخرى.'),
+            backgroundColor: Color.fromARGB(255, 43, 42, 41),
+          ),
+        );
+      }
     }
-    // الـ Stream سيتلقى "arrived" ويحدّث الـ UI تلقائياً (مطابق/متكرر آمن).
   }
 
   /// بدء الرحلة عند ركوب العميل — مُشغّل فقط (Trigger).
@@ -480,24 +488,25 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
 
     if (mounted) Navigator.pop(context);
 
-    if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تعذر بدء الرحلة، حاول مرة أخرى.'),
-          backgroundColor: Color.fromARGB(255, 43, 42, 41),
-        ),
-      );
-      return;
-    }
-    // ⚠️ إصلاح الحظر: حدّث الحالة محلياً فوراً (احتياطي لتعطّل الريل-تايم).
+    // ⚠️ نحدّث الـ UI فوراً عند نجاح الضغط (idempotent مع السوكيت/الـ Stream).
+    // عند الفشل نُبقي الكارت على حالة «في الانتظار» السابقة.
     if (mounted) {
       setState(() {
         _currentRideRequest = _currentRideRequest?.copyWith(
-          status: RideStatus.started,
+          status: success ? RideStatus.started : RideStatus.arrived,
         );
       });
+      if (success) {
+        _onTripPhaseChanged();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر بدء الرحلة، حاول مرة أخرى.'),
+            backgroundColor: Color.fromARGB(255, 43, 42, 41),
+          ),
+        );
+      }
     }
-    // الـ Stream سيتلقى "started" ويحدّث الـ UI تلقائياً (مطابق/متكرر آمن).
   }
 
   /// إنهاء الرحلة عند الوصول للوجهة — مُشغّل فقط (Trigger).
@@ -523,9 +532,10 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
       );
       return;
     }
-    // ⚠️ إصلاح الحظر: نُنهي الرحلة محلياً فوراً (تصفير الكارت + رسالة نجاح)
+    // ⚠️ نُنهي الرحلة محلياً فوراً (تصفير الكارت + مسح المسار + رسالة نجاح)
     // حتى لا يتعطل الـ UI إذا لم تصل مزامنة الريل-تايم. الحارس `_activeTripId`
     // يضمن تنفيذ هذا مرة واحدة فقط حتى لو وصلت المزامنة أيضاً.
+    _onTripPhaseChanged(); // امسح المسار قبل تصفير الكارت
     _handleRideCompleted();
   }
 
@@ -548,6 +558,90 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     );
   }
 
+  // ──────────────────────────────────────────────────────
+  // Route drawing on the map (per trip phase)
+  // ──────────────────────────────────────────────────────
+
+  /// يُستدعى عند كل انتقال ناجح بين مراحل الرحلة (accept/arrive/start/complete)
+  /// أو عند الإلغاء: يمسح المسار السابق ثم يرسم المسار المناسب للمرحلة الجديدة.
+  /// - accepted → موقع الكابتن الحالي → نقطة الالتقاط
+  /// - started   → موقع الكابتن الحالي → الوجهة النهائية
+  /// - arrived/completed/cancelled → لا مسار (أو يُمسح)
+  Future<void> _onTripPhaseChanged() async {
+    await _clearTripRoute();
+    final ride = _currentRideRequest;
+    if (ride == null || !_mapReady) return;
+
+    if (ride.status == RideStatus.accepted) {
+      await _drawTripRoute(
+        endLat: ride.pickupLat,
+        endLng: ride.pickupLng,
+        endLabel: ride.pickupAddress,
+      );
+    } else if (ride.status == RideStatus.started) {
+      await _drawTripRoute(
+        endLat: ride.destinationLat,
+        endLng: ride.destinationLng,
+        endLabel: ride.destinationAddress,
+      );
+    }
+    // arrived / completed / cancelled → لا مسار
+  }
+
+  /// يرسم مساراً من موقع الكابتن الحالي إلى نقطة النهاية (lat/lng).
+  /// يستخدم OSM drawRoad (يجلب المسار الحقيقي من الـ OSRM بدون أرقام وهمية).
+  /// إن تعذّر تحديد الموقع أو الإحداثيات → يكتفي بوضع علامة في النهاية.
+  Future<void> _drawTripRoute({
+    required double? endLat,
+    required double? endLng,
+    String? endLabel,
+  }) async {
+    if (!_mapReady) return;
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      if (endLat == null || endLng == null) {
+        // لا إحداثيات نهاية → نضع علامة فقط دون مسار.
+        await mapController.addMarker(
+          osm.GeoPoint(
+            latitude: endLat ?? pos.latitude,
+            longitude: endLng ?? pos.longitude,
+          ),
+          markerIcon: const osm.MarkerIcon(
+            icon: Icon(Icons.flag, color: Colors.red),
+          ),
+        );
+        return;
+      }
+      final road = await mapController.drawRoad(
+        osm.GeoPoint(latitude: pos.latitude, longitude: pos.longitude),
+        osm.GeoPoint(latitude: endLat, longitude: endLng),
+        roadOption: const osm.RoadOption(
+          roadColor: AppColors.primary,
+          roadWidth: 6,
+          zoomInto: true,
+        ),
+      );
+      _currentRoadKey = road.key;
+    } catch (_) {
+      // Silent — رسم المسار best-effort؛ لا نعطل الـ UI عند الفشل.
+    }
+  }
+
+  /// يمسح المسار المرسوم حالياً (إن وُجد) قبل رسم مسار جديد أو عند الإنهاء/الإلغاء.
+  Future<void> _clearTripRoute() async {
+    if (_currentRoadKey == null) return;
+    try {
+      await mapController.removeRoad(roadKey: _currentRoadKey!);
+    } catch (_) {
+      // Silent
+    }
+    _currentRoadKey = null;
+  }
+
   /// معالجة تحديث حالة رحلة نشطة وصل عبر السوكيت (`ride.status_update`).
   /// الباك إند يرسل الحالة بحروف كبيرة (ACCEPTED...) — نتعامل مع الحالتين.
   /// التحديثات هنا مطابقة/مكررة آمنة مع التحديث المحلي بعد نجاح REST.
@@ -568,13 +662,17 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           (s) => s.name == normalized,
           orElse: () => RideStatus.accepted,
         );
+        final prev = _currentRideRequest?.status;
         setState(() {
           _currentRideRequest = _currentRideRequest?.copyWith(
             status: newStatus,
           );
         });
+        // أعد رسم المسار فقط عند تغيّر المرحلة فعلياً (مصدر الحقيقة = السوكيت).
+        if (prev != newStatus) _onTripPhaseChanged();
         break;
       case 'completed':
+        _onTripPhaseChanged(); // امسح المسار قبل تصفير الكارت
         _handleRideCompleted();
         break;
       case 'cancelled':
@@ -600,6 +698,8 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     RealtimeService.instance.stopRideStatusListener();
     SocketService().leaveRide(_activeTripId!);
     _activeTripId = null;
+    // امسح المسار المرسوم على الخريطة عند الإلغاء.
+    _clearTripRoute();
     setState(() => _currentRideRequest = null);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
