@@ -22,7 +22,6 @@ import 'package:waslny_captain/features/wallet/wallet_screen.dart';
 import 'package:waslny_captain/features/profile/profile_screen.dart';
 import 'package:waslny_captain/features/notifications/notifications_screen.dart';
 import 'package:waslny_captain/features/chat/chat_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'widgets/home_map_widget.dart';
 import 'widgets/ride_request_card.dart';
@@ -610,6 +609,42 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     );
   }
 
+  /// تأكيد إلغاء الرحلة من الكابتن (من بطاقة «متوجه للراكب») ثم مسار الإلغاء
+  /// المحلي الحالي. لا يوجد API إلغاء من جهة الكابتن بعد — نكتفي بإخفاء
+  /// الكارت محلياً (كما في مسار الرفض/الإلغاء من السوكيت).
+  Future<void> _confirmCancelRide() async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+        title: const Text(
+          'إلغاء الرحلة',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'هل أنت متأكد من إلغاء الرحلة؟',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('تراجع'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('إلغاء الرحلة'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) _handleRideCancelled();
+  }
+
   /// فتح شاشة المحادثة الريل تايم مع الراكب أثناء الرحلة النشطة.
   /// الغرفة تُنشأ في Firestore عند قبول الرحلة (من الباك إند)،
   /// ومعرّفها = معرّف الرحلة، والطرف الآخر = riderId.
@@ -643,47 +678,6 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
   /// لو كان رقم الراكب غير موجود في بيانات الرحلة الحالية، نجلبها بصمت من
   /// تفاصيل الرحلة (`GET /rides/current` — مسار محمي بالتوكن فقط بدون
   /// `requireRole`، فلا تظهر رسالة «هذا المسار مخصص لـ CAPTAIN فقط» أبداً).
-  Future<void> _callRider(RideModel ride) async {
-    String? phone = ride.riderPhone;
-
-    // Fallback آمن: رقم غير موجود في النموذج → جلب تفاصيل الرحلة الحالية.
-    // أي فشل (شبكة/صلاحيات/غير متوفر) يُتجاهل بصمت — الاتصال محلي ولا نظهر
-    // رسائل API للمستخدم.
-    if (phone == null || phone.isEmpty) {
-      try {
-        final current = await ApiService.instance.getCurrentRide();
-        phone = current?.riderPhone;
-      } catch (_) {
-        // Silent — لا نعرض أخطاء الـ API أبداً على زر الاتصال.
-      }
-    }
-
-    if (phone == null || phone.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('رقم هاتف الراكب غير متوفر'),
-            backgroundColor: Color.fromARGB(255, 250, 62, 66),
-          ),
-        );
-      }
-      return;
-    }
-    final uri = Uri.parse('tel:$phone');
-    try {
-      await launchUrl(uri);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر فتح طلب الاتصال'),
-            backgroundColor: Color.fromARGB(255, 250, 62, 66),
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _uploadCurrentPosition() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -1153,6 +1147,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                 destinationAddress: _currentRideRequest!.destinationAddress,
                 price: _currentRideRequest!.fare?.toStringAsFixed(2),
                 riderName: _currentRideRequest!.riderName,
+                riderPhone: _currentRideRequest!.riderPhone,
                 distance: _currentRideRequest!.distance,
                 etaText: _currentRideRequest!.etaText,
                 onMarkArrived: () => _arriveRide(_currentRideRequest!),
@@ -1160,7 +1155,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                 onMarkCompleted: () => _completeRide(_currentRideRequest!),
                 onBackToHome: () => setState(() => _currentRideRequest = null),
                 onOpenChat: () => _openChat(_currentRideRequest!),
-                onCallTap: () => _callRider(_currentRideRequest!),
+                onCancel: _confirmCancelRide,
               ),
             ),
       ],

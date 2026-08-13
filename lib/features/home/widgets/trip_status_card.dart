@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:waslny_captain/core/theme/app_theme.dart';
 
@@ -14,6 +15,10 @@ class TripStatusCard extends StatelessWidget {
   final String? destinationAddress;
   final String? price;
   final String? riderName;
+  final String? riderPhone;
+  final double? riderRating;
+  final int? riderRatingCount;
+  final String? paymentMethod;
   final String? distance;
   final String? etaText;
   final VoidCallback onMarkArrived;
@@ -22,6 +27,7 @@ class TripStatusCard extends StatelessWidget {
   final VoidCallback onBackToHome;
   final VoidCallback? onCallTap;
   final VoidCallback? onOpenChat;
+  final VoidCallback? onCancel;
 
   const TripStatusCard({
     super.key,
@@ -31,6 +37,10 @@ class TripStatusCard extends StatelessWidget {
     this.destinationAddress,
     this.price,
     this.riderName,
+    this.riderPhone,
+    this.riderRating,
+    this.riderRatingCount,
+    this.paymentMethod,
     this.distance,
     this.etaText,
     required this.onMarkArrived,
@@ -39,6 +49,7 @@ class TripStatusCard extends StatelessWidget {
     required this.onBackToHome,
     this.onCallTap,
     this.onOpenChat,
+    this.onCancel,
   });
 
   @override
@@ -47,6 +58,10 @@ class TripStatusCard extends StatelessWidget {
       case 'accepted':
         return _AcceptedCard(
           riderName: riderName ?? tripDoc?['riderName'] as String? ?? '...',
+          riderPhone: riderPhone ?? tripDoc?['riderPhone'] as String?,
+          riderRating: riderRating,
+          riderRatingCount: riderRatingCount,
+          paymentMethod: paymentMethod,
           pickup:
               pickupAddress ?? tripDoc?['pickupAddress'] as String? ?? '...',
           destination:
@@ -57,8 +72,8 @@ class TripStatusCard extends StatelessWidget {
           distance: distance ?? '',
           etaText: etaText,
           onMarkArrived: onMarkArrived,
-          onCallTap: onCallTap,
           onOpenChat: onOpenChat,
+          onCancel: onCancel,
         );
       case 'arrived':
         return _ArrivedCard(
@@ -102,62 +117,371 @@ class TripStatusCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ACCEPTED — captain heading to pickup
+// ACCEPTED — captain heading to pickup (متوجه للراكب)
 // ═══════════════════════════════════════════════════════════════
 
 class _AcceptedCard extends StatelessWidget {
   final String riderName;
+  final String? riderPhone;
+  final double? riderRating;
+  final int? riderRatingCount;
+  final String? paymentMethod;
   final String pickup;
   final String destination;
   final String price;
   final String distance;
   final String? etaText;
   final VoidCallback onMarkArrived;
-  final VoidCallback? onCallTap;
   final VoidCallback? onOpenChat;
+  final VoidCallback? onCancel;
 
   const _AcceptedCard({
     required this.riderName,
+    this.riderPhone,
+    this.riderRating,
+    this.riderRatingCount,
+    this.paymentMethod,
     required this.pickup,
     required this.destination,
     required this.price,
     required this.distance,
     this.etaText,
     required this.onMarkArrived,
-    this.onCallTap,
     this.onOpenChat,
+    this.onCancel,
   });
+
+  Future<void> _call() async {
+    final phone = riderPhone;
+    if (phone == null || phone.isEmpty) return;
+    try {
+      await launchUrl(Uri.parse('tel:$phone'));
+    } catch (_) {
+      // Silent — لا نعرض أخطاء على زر الاتصال.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return _TripCardContainer(
-      borderColor: AppColors.primary.withValues(alpha: 0.5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final bool hasRating = riderRating != null;
+    final bool hasPayment = paymentMethod != null && paymentMethod!.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── 1) شريط علوي أخضر كامل العرض ──
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(AppSpacing.radiusXl),
+              topRight: Radius.circular(AppSpacing.radiusXl),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'متوجه للراكب',
+                style: AppTextStyles.headlineSmall?.copyWith(
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'توجه إلى نقطة الالتقاط',
+                style: AppTextStyles.bodyMedium?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.85),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ── باقي البطاقة على خلفية داكنة مستديرة ──
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(AppSpacing.radiusXl),
+              bottomRight: Radius.circular(AppSpacing.radiusXl),
+            ),
+            border: Border.all(color: AppColors.border),
+            boxShadow: AppColors.shadowMd,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── 2) بطاقة الراكب ──
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                    child: const Icon(
+                      Icons.person,
+                      color: AppColors.primary,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          riderName,
+                          style: AppTextStyles.titleMedium?.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        if (hasRating) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.star_rounded,
+                                color: AppColors.warning,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                riderRating!.toStringAsFixed(1),
+                                style: AppTextStyles.labelMedium?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              if (riderRatingCount != null) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  '($riderRatingCount)',
+                                  style: AppTextStyles.labelSmall?.copyWith(
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // صف زرّين متساويين بحدود خضراء
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _call,
+                      icon: const Icon(Icons.phone_outlined, size: 18),
+                      label: const Text('اتصال'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: BorderSide(
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusSm,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onOpenChat,
+                      icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                      label: const Text('محادثة'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: BorderSide(
+                          color: AppColors.primary.withValues(alpha: 0.5),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusSm,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+
+              // ── 3) قسم نقطة الالتقاط ──
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.location_on,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'نقطة الالتقاط',
+                          style: AppTextStyles.labelSmall?.copyWith(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          pickup,
+                          style: AppTextStyles.titleMedium?.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        if (distance.isNotEmpty || etaText != null) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              if (distance.isNotEmpty)
+                                _InfoChip(icon: Icons.route, label: distance),
+                              if (etaText != null)
+                                _InfoChip(
+                                  icon: Icons.access_time,
+                                  label: etaText!,
+                                ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // ── 4) الوجهة النهائية (ثانوية وأصغر) ──
+              if (destination.isNotEmpty)
+                Text(
+                  'الوجهة النهائية: $destination',
+                  style: AppTextStyles.bodySmall?.copyWith(
+                    color: AppColors.textMuted,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              const SizedBox(height: 16),
+
+              // ── 5) السعر ──
+              Center(
+                child: Column(
+                  children: [
+                    Text(
+                      price,
+                      style: AppTextStyles.amountLarge?.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'ج.م',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (hasPayment) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        paymentMethod!,
+                        style: AppTextStyles.labelMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // ── 6) الأزرار السفلية ──
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: onMarkArrived,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    ),
+                  ),
+                  child: const Text(
+                    'وصلت لنقطة الالتقاط',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              if (onCancel != null) ...[
+                const SizedBox(height: 10),
+                Center(
+                  child: TextButton(
+                    onPressed: onCancel,
+                    child: Text(
+                      'إلغاء الرحلة',
+                      style: AppTextStyles.labelMedium?.copyWith(
+                        color: AppColors.error.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// شيب صغير (أيقونة + نص) يُستخدم في قسم نقطة الالتقاط.
+class _InfoChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _InfoChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _HeaderRow(
-            riderName: riderName,
-            badgeIcon: Icons.directions_walk,
-            badgeText: 'متجه إليك',
-            badgeColor: AppColors.primary,
-          ),
-          const SizedBox(height: 14),
-          _PickupRow(address: pickup),
-          const SizedBox(height: 8),
-          _DestinationRow(address: destination),
-          const SizedBox(height: 14),
-          _FareDistanceRow(distance: distance, price: price),
-          if (etaText != null) _EtaRow(etaText: etaText!),
-          const SizedBox(height: 16),
-          if (onCallTap != null || onOpenChat != null)
-            _ContactRow(onCall: onCallTap, onOpenChat: onOpenChat),
-          if (onCallTap != null || onOpenChat != null)
-            const SizedBox(height: 10),
-          _ActionButton(
-            label: '✅ وصلت',
-            color: AppColors.success,
-            onPressed: onMarkArrived,
+          Icon(icon, size: 13, color: AppColors.textSecondary),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: AppTextStyles.labelSmall?.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       ),
