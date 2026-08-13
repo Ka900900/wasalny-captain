@@ -22,6 +22,7 @@ import 'package:waslny_captain/features/wallet/wallet_screen.dart';
 import 'package:waslny_captain/features/profile/profile_screen.dart';
 import 'package:waslny_captain/features/notifications/notifications_screen.dart';
 import 'package:waslny_captain/features/chat/chat_screen.dart';
+import 'package:waslny_captain/features/support/support_chat_screen.dart';
 
 import 'widgets/home_map_widget.dart';
 import 'widgets/ride_request_card.dart';
@@ -772,6 +773,60 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
     );
   }
 
+  /// إرسال تقييم الراكب بعد اكتمال الرحلة (كارت «تقييم الراكب»).
+  ///
+  /// يستدعي `ApiService.rateRide` (POST /rate) بالحقول المطلوبة من الـ validator:
+  /// rideId, toUserId (معرّف الراكب), rating (1..5), comment (الأوصاف + الملاحظة).
+  /// بعد الإرسال (ناجحاً أو فاشلاً) نمسح الحالة النشطة ونعود لوضع الاستعداد.
+  Future<void> _submitRiderRating(
+    RideModel ride,
+    RiderRatingSubmission submission,
+  ) async {
+    if (!mounted) return;
+    final riderId = ride.riderId;
+    if (riderId == null || riderId.isEmpty) {
+      _clearActiveTripAfterRating();
+      return;
+    }
+    // نجمع الأوصاف + الملاحظة في حقل comment كما يتوقّعه الباك.
+    final comment = [
+      if (submission.tags.isNotEmpty) submission.tags.join('، '),
+      if (submission.note.isNotEmpty) submission.note,
+    ].join(' — ');
+    await ApiService.instance.rateRide(
+      rideId: ride.id,
+      toUserId: riderId,
+      rating: submission.rating,
+      comment: comment.isNotEmpty ? comment : null,
+    );
+    _clearActiveTripAfterRating();
+  }
+
+  /// تخطّي تقييم الراكب — يُغلق الرحلة النشطة بدون تقييم.
+  void _skipRiderRating() {
+    if (!mounted) return;
+    _clearActiveTripAfterRating();
+  }
+
+  /// يمسح الحالة النشطة بعد التقييم/التخطّي ويعود لوضع الاستعداد (أونلاين بدون كارت).
+  void _clearActiveTripAfterRating() {
+    if (!mounted) return;
+    RealtimeService.instance.stopRideStatusListener();
+    if (_activeTripId != null) SocketService().leaveRide(_activeTripId!);
+    _activeTripId = null;
+    _clearTripRoute();
+    setState(() => _currentRideRequest = null);
+  }
+
+  /// فتح شاشة الدعم (مسار «مشكلة / دعم» من كارت الرحلة الجارية).
+  void _openSupport() {
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      RouteTransitions.slideUp(const SupportChatScreen()),
+    );
+  }
+
   /// فتح متصفح الهاتف لطلب الاتصال بالراكب.
   ///
   /// الاتصال محلي 100% عبر `url_launcher` بـ `tel:` — لا يُستدعى أي API للاتصال.
@@ -1235,8 +1290,9 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
             )
           else if (_currentRideRequest!.status == RideStatus.accepted ||
               _currentRideRequest!.status == RideStatus.arrived ||
-              _currentRideRequest!.status == RideStatus.started)
-            // رحلة نشطة (مقبولة / وصل الكابتن / قيد التنفيذ)
+              _currentRideRequest!.status == RideStatus.started ||
+              _currentRideRequest!.status == RideStatus.completed)
+            // رحلة نشطة (مقبولة / وصل الكابتن / قيد التنفيذ / مكتملة بانتظار التقييم)
             Positioned(
               left: 16,
               right: 16,
@@ -1248,6 +1304,7 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                 price: _currentRideRequest!.fare?.toStringAsFixed(2),
                 riderName: _currentRideRequest!.riderName,
                 riderPhone: _currentRideRequest!.riderPhone,
+                riderId: _currentRideRequest!.riderId,
                 distance: _currentRideRequest!.distance,
                 etaText: _currentRideRequest!.etaText,
                 onMarkArrived: () => _arriveRide(_currentRideRequest!),
@@ -1256,6 +1313,10 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
                 onBackToHome: () => setState(() => _currentRideRequest = null),
                 onOpenChat: () => _openChat(_currentRideRequest!),
                 onCancel: _confirmCancelRide,
+                onRateRider: (submission) =>
+                    _submitRiderRating(_currentRideRequest!, submission),
+                onSkipRating: _skipRiderRating,
+                onSupport: _openSupport,
               ),
             ),
       ],

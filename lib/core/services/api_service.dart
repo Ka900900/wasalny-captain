@@ -722,6 +722,44 @@ class ApiService {
     }
   }
 
+  /// تقييم الراكب من طرف الكابتن بعد انتهاء الرحلة.
+  ///
+  /// يستدعي `POST /api/v1/rate` بالحقول المطلوبة من الـ validator:
+  /// `rideId`, `toUserId` (معرّف الراكب), `rating` (1..5), `comment` (اختياري).
+  /// يُرجع `true` عند النجاح، أو `false` عند الفشل (شبكة/HTTP/تحقق) حتى لا
+  /// يُعطّل تدفّق إغلاق الرحلة — التخطّي يعمل دائماً.
+  Future<bool> rateRide({
+    required String rideId,
+    required String toUserId,
+    required int rating,
+    String? comment,
+  }) async {
+    if (!backendEnabled) return true;
+    await _ensureTokenLoaded();
+    try {
+      await _dio.post(
+        '/rate',
+        data: {
+          'rideId': rideId,
+          'toUserId': toUserId,
+          'rating': rating,
+          if (comment != null && comment.isNotEmpty) 'comment': comment,
+        },
+      );
+      logInfo('ApiService', '✅ rateRide submitted for ride=$rideId');
+      return true;
+    } on DioException catch (e) {
+      logWarning(
+        'ApiService',
+        'rateRide failed: ${e.response?.statusCode} ${e.response?.data}',
+      );
+      return false;
+    } catch (e) {
+      logError('ApiService', 'rateRide error: $e', e);
+      return false;
+    }
+  }
+
   /// تبديل حالة توافر الكابتن (Online/Offline) في الباك إند.
   /// يُرسل POST إلى /driver/toggle-availability مع {'isAvailable': isAvailable}.
   /// التوك ين يضاف تلقائياً في الـ Header عبر AuthInterceptor.
