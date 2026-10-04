@@ -43,7 +43,8 @@ class DioClient {
   /// Safe to call multiple times — subsequent calls are no‑ops once
   /// the client is initialised (unless [force] is `true`).
   void init({
-    String baseUrl = 'https://wasalny-backend-production.up.railway.app/api/v1',
+    String baseUrl =
+        'https://wasalny-backend-production-abc7.up.railway.app/api/v1',
     bool force = false,
   }) {
     if (_initialised && !force) return;

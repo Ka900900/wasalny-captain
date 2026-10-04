@@ -29,7 +29,7 @@ class SocketService {
 
     // تأكد من استخدام IP الكمبيوتر الصحيح بدلاً من localhost
     const String socketUrl =
-        "https://wasalny-backend-production.up.railway.app";
+        "https://wasalny-backend-production-abc7.up.railway.app";
 
     log('جاري الاتصال بسيرفر السوكيت: $socketUrl');
 

@@ -22,7 +22,7 @@ class ApiService {
 
   // Change this to your production URL when deploying
   static const String _baseUrl =
-      'https://wasalny-backend-production.up.railway.app/api/v1';
+      'https://wasalny-backend-production-abc7.up.railway.app/api/v1';
 
   /// Public base URL used by other services (e.g. [ImageUploadService]).
   static String get baseUrl => _baseUrl;

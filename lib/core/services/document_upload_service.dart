@@ -14,6 +14,8 @@ import 'package:waslny_captain/core/services/api_service.dart';
 enum UploadDocType {
   idFront('id-front'),
   idBack('id-back'),
+  criminalRecord('criminal-record'),
+  drugTest('drug-test'),
   license('license'),
   licenseBack('license-back'),
   face('face'),

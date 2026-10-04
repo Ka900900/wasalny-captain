@@ -22,7 +22,7 @@ class AuthService {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static const String _backendBaseUrl =
-      'https://wasalny-backend-production.up.railway.app/api/v1';
+      'https://wasalny-backend-production-abc7.up.railway.app/api/v1';
 
   // ──────────────────────────────────────────────
   // Streams

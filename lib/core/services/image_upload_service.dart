@@ -20,9 +20,9 @@ class ImageUploadService {
   static final Map<UploadType, UploadDocType> _typeMap = {
     UploadType.profile: UploadDocType.profile,
     UploadType.license: UploadDocType.license,
-    UploadType.idCard: UploadDocType.idFront,
+    UploadType.idCard: UploadDocType.criminalRecord,
     UploadType.car: UploadDocType.car,
-    UploadType.insurance: UploadDocType.insurance,
+    UploadType.insurance: UploadDocType.drugTest,
   };
 
   /// يرفع [file] إلى الـ Backend ويُرجع الرابط الآمن (imageUrl).
