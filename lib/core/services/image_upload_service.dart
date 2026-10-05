@@ -6,7 +6,15 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:waslny_captain/core/services/document_upload_service.dart';
 
 /// أنواع الصور المدعومة للرفع.
-enum UploadType { profile, license, idCard, car, insurance }
+enum UploadType {
+  profile,
+  license,
+  idCard,
+  car,
+  insurance,
+  criminalRecord,
+  drugTest,
+}
 
 /// Legacy upload service.
 ///
@@ -20,9 +28,11 @@ class ImageUploadService {
   static final Map<UploadType, UploadDocType> _typeMap = {
     UploadType.profile: UploadDocType.profile,
     UploadType.license: UploadDocType.license,
-    UploadType.idCard: UploadDocType.criminalRecord,
+    UploadType.idCard: UploadDocType.idFront,
     UploadType.car: UploadDocType.car,
-    UploadType.insurance: UploadDocType.drugTest,
+    UploadType.insurance: UploadDocType.insurance,
+    UploadType.criminalRecord: UploadDocType.criminalRecord,
+    UploadType.drugTest: UploadDocType.drugTest,
   };
 
   /// يرفع [file] إلى الـ Backend ويُرجع الرابط الآمن (imageUrl).

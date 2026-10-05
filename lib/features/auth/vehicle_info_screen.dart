@@ -696,7 +696,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
       if (_pickedCriminalRecord != null) {
         _criminalRecordUrl = await ImageUploadService.instance.uploadImage(
-          type: UploadType.idCard,
+          type: UploadType.criminalRecord,
           file: _pickedCriminalRecord!,
         );
         if (_criminalRecordUrl == null) {
@@ -708,7 +708,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
       if (_pickedDrugTest != null) {
         _drugTestUrl = await ImageUploadService.instance.uploadImage(
-          type: UploadType.insurance,
+          type: UploadType.drugTest,
           file: _pickedDrugTest!,
         );
         if (_drugTestUrl == null) {
