@@ -368,7 +368,9 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
           _phoneNumber ??= driverProfile['phoneNumber'] as String;
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[VehicleInfo] _loadProfile real error: $e');
+      debugPrint('[VehicleInfo] _loadProfile stack: $stack');
       debugPrint('⚠️ _loadProfile error — form will be empty: $e');
       // في حالة فشل الاتصال، تظهر الشاشة فارغة والكابتن يملأ البيانات يدوياً
     } finally {
@@ -523,7 +525,13 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
           ),
         );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[VehicleInfo] _captureAndUploadDoc real error: $e');
+      debugPrint('[VehicleInfo] _captureAndUploadDoc stack: $stack');
+      debugPrint(
+        '[VehicleInfo] _captureAndUploadDoc docType: ${docType.endpoint}',
+      );
+      debugPrint('[VehicleInfo] _captureAndUploadDoc label: $label');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -828,7 +836,10 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
           (_) => false,
         );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[VehicleInfo] _save real error: $e');
+      debugPrint('[VehicleInfo] _save stack: $stack');
+      debugPrint('[VehicleInfo] _save request endpoint: /auth/register-driver');
       if (mounted) {
         String msg;
         if (e is ApiException) {
