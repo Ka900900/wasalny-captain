@@ -345,13 +345,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         }
 
         // تعيين موديل المركبة
-        final backendModel = driverProfile['carModel'] as String?;
-        final availableModels = _modelsByCategory.values.expand(
-          (models) => models,
-        );
-        _selectedModel = availableModels.contains(backendModel)
-            ? backendModel
-            : null;
+        _selectedModel = driverProfile['carModel'] as String?;
 
         // تعبئة حقول النصوص
         _colorController.text = driverProfile['carColor'] as String? ?? '';
@@ -384,27 +378,24 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         }
       }
     } catch (e, stack) {
-      debugPrint('[VehicleInfo] getProfile failed: $e\n$stack');
-      _loadError = e.toString();
+      debugPrint('[VehicleInfo] _loadProfile error: $e\n$stack');
+      _loadError =
+          'تعذر تحميل بياناتك السابقة. يمكنك إعادة المحاولة أو المتابعة يدوياً.';
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Widget _buildProfileLoadNotice() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.error.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
+    if (_loadError == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'تعذر تحميل بيانات المركبة. يمكنك إعادة المحاولة أو المتابعة يدوياً.',
+          Text(
+            _loadError!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70),
           ),
           TextButton.icon(
             onPressed: _isLoading ? null : _loadProfile,
@@ -963,6 +954,36 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
   @override
   Widget build(BuildContext context) {
+    try {
+      return _buildScreen(context);
+    } catch (error, stackTrace) {
+      debugPrint('[VehicleInfo] build error: $error\n$stackTrace');
+      return Scaffold(
+        backgroundColor: AppColors.darkBg,
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'تعذر عرض معلومات المركبة. أعد المحاولة.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white),
+                ),
+                TextButton.icon(
+                  onPressed: _loadProfile,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('إعادة المحاولة'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildScreen(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.darkBg,
       body: Container(
@@ -998,7 +1019,6 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (_loadError != null) _buildProfileLoadNotice(),
                               // ── Header icon ────────────────
                               Container(
                                 width: 80,
@@ -1041,6 +1061,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                 style: Theme.of(context).textTheme.bodyLarge,
                               ),
                               const SizedBox(height: 24),
+                              _buildProfileLoadNotice(),
 
                               // ── Google User Info Card ─────
                               if (_googleName != null &&

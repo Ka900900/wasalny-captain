@@ -5,6 +5,7 @@ import 'package:waslny_captain/widgets/image_source_picker.dart';
 
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
+import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/image_upload_service.dart';
@@ -225,6 +226,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         }
         return;
       }
+      final uid = user.uid;
+
       // 1. حفظ الاسم والصورة عبر الباك إند (API)
       final name = _nameCtrl.text.trim();
       final nameParts = name.split(' ');
@@ -242,6 +245,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await ApiService.instance.updatePhoneNumber(
         phoneNumber: _phoneCtrl.text.trim(),
       );
+
+      // 3. حفظ الرقم القومي في Firestore كاحتياط (لا يوجد endpoint في الباك إند حالياً)
+      //    لحين إضافة endpoint له في المستقبل
+      final repo = DriverRepository.instance;
+      final now = DateTime.now();
+      final profile = DriverProfile(
+        uid: uid,
+        name: name,
+        phone: _phoneCtrl.text.trim(),
+        photoUrl: _photoUrl,
+        nationalId: widget.profile?.nationalId,
+        vehicleType: widget.profile?.vehicleType ?? '',
+        vehicleModel: widget.profile?.vehicleModel ?? '',
+        vehicleColor: widget.profile?.vehicleColor ?? '',
+        vehicleNumber: widget.profile?.vehicleNumber ?? '',
+        documentsGraceEndsAt: widget.profile?.documentsGraceEndsAt,
+        createdAt: widget.profile?.createdAt ?? now,
+        updatedAt: now,
+      );
+      await repo.saveProfile(profile);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -342,9 +365,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // ── National ID ─────────────────────────
-                  _label('الرقم القومي'),
-                  const SizedBox(height: AppSpacing.sm),
                   Text(
                     'الرقم القومي غير مدعوم من الخادم حاليًا.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
