@@ -15,7 +15,7 @@ import 'package:waslny_captain/core/services/sound_service.dart';
 import 'package:waslny_captain/core/services/realtime_service.dart';
 import 'package:waslny_captain/core/services/socket_service.dart';
 import 'package:waslny_captain/core/services/notification_service.dart';
-import 'package:waslny_captain/features/profile/edit_profile_screen.dart';
+import 'package:waslny_captain/features/auth/vehicle_info_screen.dart';
 import 'package:waslny_captain/core/widgets/route_transitions.dart';
 import 'package:waslny_captain/features/trips/trips_screen.dart';
 import 'package:waslny_captain/features/wallet/wallet_screen.dart';
@@ -1043,12 +1043,15 @@ class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.push(
+              Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => EditProfileScreen(profile: _profile),
+                  builder: (_) =>
+                      const VehicleInfoScreen(documentResubmission: true),
                 ),
-              );
+              ).then((submitted) {
+                if (submitted == true && mounted) _fetchProfile();
+              });
             },
             child: const Text('رفع المستندات'),
           ),

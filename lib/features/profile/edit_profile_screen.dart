@@ -5,7 +5,6 @@ import 'package:waslny_captain/widgets/image_source_picker.dart';
 
 import 'package:waslny_captain/core/design_system/design_system.dart';
 import 'package:waslny_captain/core/models/driver_profile.dart';
-import 'package:waslny_captain/core/repositories/driver_repository.dart';
 import 'package:waslny_captain/core/services/api_service.dart';
 import 'package:waslny_captain/core/services/auth_service.dart';
 import 'package:waslny_captain/core/services/image_upload_service.dart';
@@ -31,7 +30,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   // ── Text controllers ────────────────────────────────────
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
-  late final TextEditingController _nationalIdCtrl;
 
   // ── Image URLs (either existing or freshly uploaded) ────
   String? _photoUrl;
@@ -54,7 +52,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _phoneCtrl = TextEditingController(
       text: p?.phone ?? AuthService.instance.currentPhoneNumber,
     );
-    _nationalIdCtrl = TextEditingController(text: p?.nationalId ?? '');
     _photoUrl = p?.photoUrl;
   }
 
@@ -62,7 +59,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
-    _nationalIdCtrl.dispose();
     super.dispose();
   }
 
@@ -229,8 +225,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         }
         return;
       }
-      final uid = user.uid;
-
       // 1. حفظ الاسم والصورة عبر الباك إند (API)
       final name = _nameCtrl.text.trim();
       final nameParts = name.split(' ');
@@ -248,26 +242,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await ApiService.instance.updatePhoneNumber(
         phoneNumber: _phoneCtrl.text.trim(),
       );
-
-      // 3. حفظ الرقم القومي في Firestore كاحتياط (لا يوجد endpoint في الباك إند حالياً)
-      //    لحين إضافة endpoint له في المستقبل
-      final repo = DriverRepository.instance;
-      final now = DateTime.now();
-      final profile = DriverProfile(
-        uid: uid,
-        name: name,
-        phone: _phoneCtrl.text.trim(),
-        photoUrl: _photoUrl,
-        nationalId: _nationalIdCtrl.text.trim(),
-        vehicleType: widget.profile?.vehicleType ?? '',
-        vehicleModel: widget.profile?.vehicleModel ?? '',
-        vehicleColor: widget.profile?.vehicleColor ?? '',
-        vehicleNumber: widget.profile?.vehicleNumber ?? '',
-        documentsGraceEndsAt: widget.profile?.documentsGraceEndsAt,
-        createdAt: widget.profile?.createdAt ?? now,
-        updatedAt: now,
-      );
-      await repo.saveProfile(profile);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -371,13 +345,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   // ── National ID ─────────────────────────
                   _label('الرقم القومي'),
                   const SizedBox(height: AppSpacing.sm),
-                  TextFormField(
-                    controller: _nationalIdCtrl,
-                    style: AppTextStyles.bodyLarge,
-                    decoration: _inputDecoration('أدخل الرقم القومي'),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'هذا الحقل مطلوب'
-                        : null,
+                  Text(
+                    'الرقم القومي غير مدعوم من الخادم حاليًا.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   _label('البريد الإلكتروني'),

@@ -31,6 +31,7 @@ class VehicleInfoScreen extends StatefulWidget {
   final String? googleName;
   final String? googleEmail;
   final String? googlePhotoUrl;
+  final bool documentResubmission;
 
   const VehicleInfoScreen({
     super.key,
@@ -39,6 +40,7 @@ class VehicleInfoScreen extends StatefulWidget {
     this.googleName,
     this.googleEmail,
     this.googlePhotoUrl,
+    this.documentResubmission = false,
   });
 
   @override
@@ -55,6 +57,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
   bool _isLoading = true;
   bool _isSaving = false;
+  String? _loadError;
 
   String _vehicleType = 'private';
   String? _licenseUrl;
@@ -320,6 +323,12 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   /// إذا كان الكابتن مسجلًا بالفعل، تظهر بياناته (موديل العربية، اللون، اللوحة،
   /// الصور، إلخ) بدون الحاجة لإعادة إدخالها.
   Future<void> _loadProfile() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
     try {
       final result = await ApiService.instance.getProfile();
       if (!mounted) return;
@@ -336,7 +345,13 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         }
 
         // تعيين موديل المركبة
-        _selectedModel = driverProfile['carModel'] as String?;
+        final backendModel = driverProfile['carModel'] as String?;
+        final availableModels = _modelsByCategory.values.expand(
+          (models) => models,
+        );
+        _selectedModel = availableModels.contains(backendModel)
+            ? backendModel
+            : null;
 
         // تعبئة حقول النصوص
         _colorController.text = driverProfile['carColor'] as String? ?? '';
@@ -369,13 +384,36 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
         }
       }
     } catch (e, stack) {
-      debugPrint('[VehicleInfo] _loadProfile real error: $e');
-      debugPrint('[VehicleInfo] _loadProfile stack: $stack');
-      debugPrint('⚠️ _loadProfile error — form will be empty: $e');
-      // في حالة فشل الاتصال، تظهر الشاشة فارغة والكابتن يملأ البيانات يدوياً
+      debugPrint('[VehicleInfo] getProfile failed: $e\n$stack');
+      _loadError = e.toString();
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Widget _buildProfileLoadNotice() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'تعذر تحميل بيانات المركبة. يمكنك إعادة المحاولة أو المتابعة يدوياً.',
+          ),
+          TextButton.icon(
+            onPressed: _isLoading ? null : _loadProfile,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('إعادة المحاولة'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ──────────────────────────────────────────────────────
@@ -668,10 +706,14 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!widget.documentResubmission && !_formKey.currentState!.validate()) {
+      return;
+    }
 
     // صورة السيارة إجبارية قبل الحفظ
-    if (_pickedCarPhoto == null && _carPhotoUrl == null) {
+    if (!widget.documentResubmission &&
+        _pickedCarPhoto == null &&
+        _carPhotoUrl == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -716,6 +758,18 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
             'تعذر رفع تحليل المخدرات. تحقق من الاتصال وحاول مرة أخرى.',
           );
         }
+      }
+
+      if (widget.documentResubmission) {
+        if (_criminalRecordUrl == null || _drugTestUrl == null) {
+          throw Exception('يرجى رفع الفيش الجنائي وتحليل المخدرات.');
+        }
+        await ApiService.instance.resubmitApplication(
+          criminalRecordUrl: _criminalRecordUrl,
+          drugTestUrl: _drugTestUrl,
+        );
+        if (mounted) Navigator.pop(context, true);
+        return;
       }
 
       // رفع صورة السيارة (إجبارية — تم التحقق من وجودها أعلى الدالة)
@@ -839,7 +893,9 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
     } catch (e, stack) {
       debugPrint('[VehicleInfo] _save real error: $e');
       debugPrint('[VehicleInfo] _save stack: $stack');
-      debugPrint('[VehicleInfo] _save request endpoint: /auth/register-driver');
+      debugPrint(
+        '[VehicleInfo] _save request endpoint: ${widget.documentResubmission ? '/auth/resubmit-application' : '/auth/register-driver'}',
+      );
       if (mounted) {
         String msg;
         if (e is ApiException) {
@@ -942,6 +998,7 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              if (_loadError != null) _buildProfileLoadNotice(),
                               // ── Header icon ────────────────
                               Container(
                                 width: 80,
@@ -970,13 +1027,17 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
 
                               // ── Title ──────────────────────
                               Text(
-                                'معلومات المركبة',
+                                widget.documentResubmission
+                                    ? 'استكمال المستندات'
+                                    : 'معلومات المركبة',
                                 style: Theme.of(context).textTheme.headlineLarge
                                     ?.copyWith(color: AppColors.neonGreen),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'أدخل بيانات مركبتك لبدء استقبال الرحلات',
+                                widget.documentResubmission
+                                    ? 'ارفع الفيش الجنائي وتحليل المخدرات لرفع الحظر.'
+                                    : 'أدخل بيانات مركبتك لبدء استقبال الرحلات',
                                 style: Theme.of(context).textTheme.bodyLarge,
                               ),
                               const SizedBox(height: 24),
@@ -1564,7 +1625,11 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                             strokeWidth: 3,
                                           ),
                                         )
-                                      : const Text('حفظ وبدء الرحلات'),
+                                      : Text(
+                                          widget.documentResubmission
+                                              ? 'إرسال المستندات'
+                                              : 'حفظ وبدء الرحلات',
+                                        ),
                                 ),
                               ),
                             ],

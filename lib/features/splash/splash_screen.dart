@@ -156,44 +156,38 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _initErrorWidget() async {
-    ErrorWidget.builder = (FlutterErrorDetails details) => Directionality(
-      textDirection: TextDirection.rtl,
-      child: Container(
-        color: const Color(0xFF081014),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.error_outline_rounded,
-                color: Color(0xFFFF5A5F),
-                size: 64,
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'حدث خطأ غير متوقع',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFF7FAFC),
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      debugPrint('[ErrorWidget] ${details.exceptionAsString()}');
+      debugPrintStack(stackTrace: details.stack);
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: Container(
+          color: const Color(0xFF081014),
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  color: Color(0xFFFF5A5F),
+                  size: 64,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'يرجى إعادة المحاولة',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFFC5D0D8),
+                SizedBox(height: 20),
+                Text(
+                  'تعذر عرض هذه الشاشة. أغلقها وحاول مرة أخرى.',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFF7FAFC),
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    };
   }
 
   Future<void> _initKashier() async {
