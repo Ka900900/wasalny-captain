@@ -339,13 +339,28 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
       if (driverProfile != null) {
         // تعيين نوع المركبة من الباك إند
         final backendType = driverProfile['vehicleType'] as String?;
-        if (backendType != null &&
-            _backendToFrontendType.containsKey(backendType)) {
-          _vehicleType = _backendToFrontendType[backendType]!;
-        }
+        final normalizedType = backendType == null
+            ? null
+            : _backendToFrontendType[backendType] ?? backendType.toLowerCase();
+        _vehicleType = _vehicleTypes.contains(normalizedType)
+            ? normalizedType!
+            : 'private';
 
         // تعيين موديل المركبة
-        _selectedModel = driverProfile['carModel'] as String?;
+        final backendModel = driverProfile['carModel'] as String?;
+        final allModels = {
+          ..._carModelsByCategory.values.expand((models) => models),
+          ..._scooterModelsByCategory.values.expand((models) => models),
+          ..._motorcycleModelsByCategory.values.expand((models) => models),
+        };
+        final activeModels = _modelsByCategory.values.expand(
+          (models) => models,
+        );
+        _selectedModel =
+            allModels.contains(backendModel) &&
+                activeModels.contains(backendModel)
+            ? backendModel
+            : null;
 
         // تعبئة حقول النصوص
         _colorController.text = driverProfile['carColor'] as String? ?? '';
@@ -970,6 +985,12 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  error.toString(),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
                 TextButton.icon(
                   onPressed: _loadProfile,
                   icon: const Icon(Icons.refresh_rounded),
@@ -1061,351 +1082,354 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                 style: Theme.of(context).textTheme.bodyLarge,
                               ),
                               const SizedBox(height: 24),
-                              _buildProfileLoadNotice(),
+                              if (!widget.documentResubmission) ...[
+                                _buildProfileLoadNotice(),
 
-                              // ── Google User Info Card ─────
-                              if (_googleName != null &&
-                                  _googleName!.isNotEmpty)
-                                _buildUserInfoCard(),
-                              if (_googleName != null &&
-                                  _googleName!.isNotEmpty)
-                                const SizedBox(height: 24),
+                                // ── Google User Info Card ─────
+                                if (_googleName != null &&
+                                    _googleName!.isNotEmpty)
+                                  _buildUserInfoCard(),
+                                if (_googleName != null &&
+                                    _googleName!.isNotEmpty)
+                                  const SizedBox(height: 24),
 
-                              // ── Phone Number (Google users) ─
-                              if (_googleName != null &&
-                                  _googleName!.isNotEmpty &&
-                                  (_phoneNumber == null ||
-                                      _phoneNumber!.isEmpty)) ...[
-                                TextFormField(
-                                  controller: _phoneController,
-                                  keyboardType: TextInputType.phone,
-                                  textDirection: TextDirection.ltr,
+                                // ── Phone Number (Google users) ─
+                                if (_googleName != null &&
+                                    _googleName!.isNotEmpty &&
+                                    (_phoneNumber == null ||
+                                        _phoneNumber!.isEmpty)) ...[
+                                  TextFormField(
+                                    controller: _phoneController,
+                                    keyboardType: TextInputType.phone,
+                                    textDirection: TextDirection.ltr,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                    ),
+                                    decoration: const InputDecoration(
+                                      hintText: '01xxxxxxxxx',
+                                      labelText: 'رقم الهاتف',
+                                      prefixIcon: Icon(
+                                        Icons.phone,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    validator: (value) {
+                                      if (value == null ||
+                                          value.trim().isEmpty) {
+                                        return 'يرجى إدخال رقم الهاتف';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                  const SizedBox(height: 18),
+                                ],
+
+                                // ── Vehicle Type ──────────────
+                                DropdownButtonFormField<String>(
+                                  initialValue: _vehicleType,
+                                  dropdownColor: AppColors.surfaceDark,
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
                                   ),
                                   decoration: const InputDecoration(
-                                    hintText: '01xxxxxxxxx',
-                                    labelText: 'رقم الهاتف',
+                                    labelText: 'نوع المركبة',
                                     prefixIcon: Icon(
-                                      Icons.phone,
+                                      Icons.category_outlined,
                                       color: AppColors.textSecondary,
                                     ),
                                   ),
+                                  items: _vehicleTypes.map((type) {
+                                    return DropdownMenuItem(
+                                      value: type,
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            _vehicleTypeIcons[type] ??
+                                                Icons.category_outlined,
+                                            color: AppColors.neonGreen,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Text(_vehicleTypesAr[type] ?? type),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      setState(() {
+                                        _vehicleType = value;
+                                        // إعادة ضبط الموديل لأن قائمة الموديلات تتغير حسب النوع
+                                        _selectedModel = null;
+                                      });
+                                    }
+                                  },
+                                ),
+                                const SizedBox(height: 18),
+
+                                // ── Vehicle Model (predefined list) ──
+                                DropdownButtonFormField<String>(
+                                  initialValue: _selectedModel,
+                                  dropdownColor: AppColors.surfaceDark,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'موديل المركبة',
+                                    prefixIcon: Icon(
+                                      Icons.model_training,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  hint: const Text('اختر موديل السيارة'),
+                                  items: [
+                                    for (final entry
+                                        in _modelsByCategory.entries) ...[
+                                      // عنوان الفئة/الماركة (غير قابل للاختيار)
+                                      DropdownMenuItem<String>(
+                                        enabled: false,
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 6,
+                                            bottom: 2,
+                                          ),
+                                          child: Text(
+                                            entry.key,
+                                            style: const TextStyle(
+                                              color: AppColors.neonGreen,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      // موديلات الفئة
+                                      for (final m in entry.value)
+                                        DropdownMenuItem<String>(
+                                          value: m,
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              right: 12,
+                                            ),
+                                            child: Text(m),
+                                          ),
+                                        ),
+                                    ],
+                                  ],
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      setState(() => _selectedModel = value);
+                                    }
+                                  },
                                   validator: (value) {
                                     if (value == null || value.trim().isEmpty) {
-                                      return 'يرجى إدخال رقم الهاتف';
+                                      return 'يرجى اختيار موديل المركبة';
                                     }
                                     return null;
                                   },
                                 ),
                                 const SizedBox(height: 18),
-                              ],
 
-                              // ── Vehicle Type ──────────────
-                              DropdownButtonFormField<String>(
-                                value: _vehicleType,
-                                dropdownColor: AppColors.surfaceDark,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                                decoration: const InputDecoration(
-                                  labelText: 'نوع المركبة',
-                                  prefixIcon: Icon(
-                                    Icons.category_outlined,
-                                    color: AppColors.textSecondary,
+                                // ── Vehicle Color ─────────────
+                                TextFormField(
+                                  controller: _colorController,
+                                  keyboardType: TextInputType.text,
+                                  textCapitalization: TextCapitalization.words,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
                                   ),
-                                ),
-                                items: _vehicleTypes.map((type) {
-                                  return DropdownMenuItem(
-                                    value: type,
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          _vehicleTypeIcons[type] ??
-                                              Icons.category_outlined,
-                                          color: AppColors.neonGreen,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Text(_vehicleTypesAr[type] ?? type),
-                                      ],
+                                  decoration: const InputDecoration(
+                                    hintText: 'مثال: أبيض, أسود, فضي',
+                                    labelText: 'لون المركبة',
+                                    prefixIcon: Icon(
+                                      Icons.palette_outlined,
+                                      color: AppColors.textSecondary,
                                     ),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    setState(() {
-                                      _vehicleType = value;
-                                      // إعادة ضبط الموديل لأن قائمة الموديلات تتغير حسب النوع
-                                      _selectedModel = null;
-                                    });
-                                  }
-                                },
-                              ),
-                              const SizedBox(height: 18),
-
-                              // ── Vehicle Model (predefined list) ──
-                              DropdownButtonFormField<String>(
-                                value: _selectedModel,
-                                dropdownColor: AppColors.surfaceDark,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'يرجى إدخال لون المركبة';
+                                    }
+                                    return null;
+                                  },
                                 ),
-                                decoration: const InputDecoration(
-                                  labelText: 'موديل المركبة',
-                                  prefixIcon: Icon(
-                                    Icons.model_training,
-                                    color: AppColors.textSecondary,
+                                const SizedBox(height: 18),
+
+                                // ── Plate Number ──────────────
+                                TextFormField(
+                                  controller: _plateController,
+                                  keyboardType: TextInputType.text,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    hintText: 'مثال: أ ب ج 1234',
+                                    labelText: 'رقم اللوحة',
+                                    prefixIcon: Icon(
+                                      Icons.confirmation_number_outlined,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'يرجى إدخال رقم اللوحة';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 18),
+
+                                // ── License Number ────────────
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    'رقم رخصة القيادة',
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 14,
+                                    ),
                                   ),
                                 ),
-                                hint: const Text('اختر موديل السيارة'),
-                                items: [
-                                  for (final entry
-                                      in _modelsByCategory.entries) ...[
-                                    // عنوان الفئة/الماركة (غير قابل للاختيار)
-                                    DropdownMenuItem<String>(
-                                      enabled: false,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          top: 6,
-                                          bottom: 2,
-                                        ),
-                                        child: Text(
-                                          entry.key,
-                                          style: const TextStyle(
-                                            color: AppColors.neonGreen,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: _licenseNumberCtrl,
+                                  keyboardType: TextInputType.text,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                  decoration: const InputDecoration(
+                                    hintText: 'أدخل رقم رخصة القيادة',
+                                    labelText: 'رقم الرخصة',
+                                    prefixIcon: Icon(
+                                      Icons.badge_outlined,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+
+                                // ── ID Card ────────────────────
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    'البطاقة الشخصية',
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: _captureIdCardFront,
+                                        child: _buildDocPreview(
+                                          label: 'الوجه الأمامي',
+                                          imageUrl: _idCardUrl,
                                         ),
                                       ),
                                     ),
-                                    // موديلات الفئة
-                                    for (final m in entry.value)
-                                      DropdownMenuItem<String>(
-                                        value: m,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 12,
-                                          ),
-                                          child: Text(m),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: _captureIdCardBack,
+                                        child: _buildDocPreview(
+                                          label: 'الوجه الخلفي',
+                                          imageUrl: _idCardBackUrl,
                                         ),
                                       ),
+                                    ),
                                   ],
-                                ],
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    setState(() => _selectedModel = value);
-                                  }
-                                },
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'يرجى اختيار موديل المركبة';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 18),
+                                ),
+                                const SizedBox(height: 18),
 
-                              // ── Vehicle Color ─────────────
-                              TextFormField(
-                                controller: _colorController,
-                                keyboardType: TextInputType.text,
-                                textCapitalization: TextCapitalization.words,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'مثال: أبيض, أسود, فضي',
-                                  labelText: 'لون المركبة',
-                                  prefixIcon: Icon(
-                                    Icons.palette_outlined,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'يرجى إدخال لون المركبة';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 18),
-
-                              // ── Plate Number ──────────────
-                              TextFormField(
-                                controller: _plateController,
-                                keyboardType: TextInputType.text,
-                                textCapitalization:
-                                    TextCapitalization.characters,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'مثال: أ ب ج 1234',
-                                  labelText: 'رقم اللوحة',
-                                  prefixIcon: Icon(
-                                    Icons.confirmation_number_outlined,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                                validator: (value) {
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'يرجى إدخال رقم اللوحة';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 18),
-
-                              // ── License Number ────────────
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  'رقم رخصة القيادة',
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextFormField(
-                                controller: _licenseNumberCtrl,
-                                keyboardType: TextInputType.text,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'أدخل رقم رخصة القيادة',
-                                  labelText: 'رقم الرخصة',
-                                  prefixIcon: Icon(
-                                    Icons.badge_outlined,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 18),
-
-                              // ── ID Card ────────────────────
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  'البطاقة الشخصية',
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _captureIdCardFront,
-                                      child: _buildDocPreview(
-                                        label: 'الوجه الأمامي',
-                                        imageUrl: _idCardUrl,
-                                      ),
+                                // ── License ────────────────────
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    'رخصة القيادة',
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _captureIdCardBack,
-                                      child: _buildDocPreview(
-                                        label: 'الوجه الخلفي',
-                                        imageUrl: _idCardBackUrl,
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: _captureLicenseFront,
+                                        child: _buildDocPreview(
+                                          label: 'الوجه الأمامي',
+                                          imageUrl: _licenseUrl,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 18),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: _captureLicenseBack,
+                                        child: _buildDocPreview(
+                                          label: 'الوجه الخلفي',
+                                          imageUrl: _licenseBackUrl,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 18),
 
-                              // ── License ────────────────────
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  'رخصة القيادة',
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
+                                // ── Vehicle License ───────────
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    'رخصة السيارة / الموتوسيكل',
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _captureLicenseFront,
-                                      child: _buildDocPreview(
-                                        label: 'الوجه الأمامي',
-                                        imageUrl: _licenseUrl,
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: _captureVehicleLicenseFront,
+                                        child: _buildDocPreview(
+                                          label: 'الوجه الأمامي',
+                                          imageUrl: _vehicleLicenseFrontUrl,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _captureLicenseBack,
-                                      child: _buildDocPreview(
-                                        label: 'الوجه الخلفي',
-                                        imageUrl: _licenseBackUrl,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: _captureVehicleLicenseBack,
+                                        child: _buildDocPreview(
+                                          label: 'الوجه الخلفي',
+                                          imageUrl: _vehicleLicenseBackUrl,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 18),
-
-                              // ── Vehicle License ───────────
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  'رخصة السيارة / الموتوسيكل',
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _captureVehicleLicenseFront,
-                                      child: _buildDocPreview(
-                                        label: 'الوجه الأمامي',
-                                        imageUrl: _vehicleLicenseFrontUrl,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      onTap: _captureVehicleLicenseBack,
-                                      child: _buildDocPreview(
-                                        label: 'الوجه الخلفي',
-                                        imageUrl: _vehicleLicenseBackUrl,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 18),
+                                const SizedBox(height: 18),
+                              ],
 
                               // ── Criminal Record upload ────
                               Align(
@@ -1476,15 +1500,17 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                       : null,
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '(اختياري الآن - متاح استكماله خلال 30 يوم من التسجيل)',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 12,
+                              if (!widget.documentResubmission) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  '(اختياري الآن - متاح استكماله خلال 30 يوم من التسجيل)',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
+                              ],
                               const SizedBox(height: 18),
 
                               // ── Drug Test upload ──────────
@@ -1554,82 +1580,89 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen>
                                       : null,
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '(اختياري الآن - متاح استكماله خلال 30 يوم من التسجيل)',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 12,
+                              if (!widget.documentResubmission) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  '(اختياري الآن - متاح استكماله خلال 30 يوم من التسجيل)',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
+                              ],
                               const SizedBox(height: 18),
 
-                              // ── Car Photo (mandatory) ─────
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  'صورة السيارة *',
-                                  style: const TextStyle(
-                                    color: AppColors.neonGreen,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              GestureDetector(
-                                onTap: _pickCarPhoto,
-                                child: Container(
-                                  width: double.infinity,
-                                  height: 140,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.surfaceDark,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
+                              if (!widget.documentResubmission) ...[
+                                // ── Car Photo (mandatory) ─────
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    'صورة السيارة *',
+                                    style: const TextStyle(
                                       color: AppColors.neonGreen,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    image: _pickedCarPhoto != null
-                                        ? DecorationImage(
-                                            image: FileImage(_pickedCarPhoto!),
-                                            fit: BoxFit.cover,
-                                          )
-                                        : (_carPhotoUrl != null
-                                              ? DecorationImage(
-                                                  image: NetworkImage(
-                                                    _carPhotoUrl!,
-                                                  ),
-                                                  fit: BoxFit.cover,
-                                                )
-                                              : null),
                                   ),
-                                  child:
-                                      _pickedCarPhoto == null &&
-                                          _carPhotoUrl == null
-                                      ? Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: const [
-                                            Icon(
-                                              Icons.directions_car_filled,
-                                              color: AppColors.textSecondary,
-                                              size: 32,
-                                            ),
-                                            SizedBox(height: 8),
-                                            Text(
-                                              'اضغط لإضافة صورة السيارة (إجباري)',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                color: AppColors.textSecondary,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ],
-                                        )
-                                      : null,
                                 ),
-                              ),
-                              const SizedBox(height: 36),
+                                const SizedBox(height: 10),
+                                GestureDetector(
+                                  onTap: _pickCarPhoto,
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 140,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceDark,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: AppColors.neonGreen,
+                                      ),
+                                      image: _pickedCarPhoto != null
+                                          ? DecorationImage(
+                                              image: FileImage(
+                                                _pickedCarPhoto!,
+                                              ),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : (_carPhotoUrl != null
+                                                ? DecorationImage(
+                                                    image: NetworkImage(
+                                                      _carPhotoUrl!,
+                                                    ),
+                                                    fit: BoxFit.cover,
+                                                  )
+                                                : null),
+                                    ),
+                                    child:
+                                        _pickedCarPhoto == null &&
+                                            _carPhotoUrl == null
+                                        ? Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: const [
+                                              Icon(
+                                                Icons.directions_car_filled,
+                                                color: AppColors.textSecondary,
+                                                size: 32,
+                                              ),
+                                              SizedBox(height: 8),
+                                              Text(
+                                                'اضغط لإضافة صورة السيارة (إجباري)',
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 36),
+                              ],
 
                               // ── Save button ───────────────
                               SizedBox(
